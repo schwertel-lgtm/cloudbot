@@ -1,0 +1,53 @@
+version: "3.8"
+
+services:
+  nordvpn:
+    build: ./nordvpn
+    container_name: nordvpn
+    restart: unless-stopped
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    devices:
+      - /dev/net/tun:/dev/net/tun
+    env_file:
+      - .env
+    environment:
+      - NORDVPN_COUNTRY=Netherlands
+    sysctls:
+      - net.ipv6.conf.all.disable_ipv6=1
+    mem_limit: 512m
+
+  kali:
+    build: ./kali
+    container_name: kali
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    network_mode: service:nordvpn
+    depends_on:
+      - nordvpn
+    volumes:
+      - kali-data:/root/data
+    tmpfs:
+      - /tmp:size=100M
+      - /run:size=10M
+    mem_limit: 2g
+
+  cloudbot:
+    build: ./cloudbot
+    container_name: cloudbot
+    restart: unless-stopped
+    network_mode: service:nordvpn
+    depends_on:
+      - nordvpn
+    env_file:
+      - .env
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - bot-logs:/app/logs
+    mem_limit: 512m
+
+volumes:
+  kali-data:
+  bot-logs:

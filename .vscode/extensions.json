@@ -1,0 +1,13 @@
+{
+  "recommendations": [
+    "ms-vscode-remote.remote-ssh",
+    "ms-python.python",
+    "ms-python.black-formatter",
+    "ms-python.pylint",
+    "ms-python.debugpy",
+    "ms-azuretools.vscode-docker",
+    "redhat.vscode-yaml",
+    "github.copilot",
+    "eamodio.gitlens"
+  ]
+}

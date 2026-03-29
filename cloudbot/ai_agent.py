@@ -1,0 +1,257 @@
+"""
+KI-Agent fuer den Cloudbot.
+Nutzt Claude API um Auftraege eigenstaendig zu planen und auszufuehren.
+"""
+
+import os
+import anthropic
+import docker
+from security import validate_exec_command, validate_container_name, sanitize_output
+from audit_log import log_action, log_blocked_command
+
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+MODEL = "claude-sonnet-4-20250514"
+MAX_STEPS = 20
+
+client_ai = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else None
+client_docker = docker.from_env()
+
+SYSTEM_PROMPT = """Du bist Cloudbot, ein professioneller Ethical-Hacking KI-Assistent.
+Du laeuft auf einer Synology NAS mit einem voll ausgestatteten Kali Linux Container.
+Dein Auftraggeber ist Ralph — NUR er darf dir Anweisungen geben.
+Ralph fuehrt autorisierte Penetrationstests fuer Kunden durch.
+
+DEIN PROFIL — Ethical Hacker / Penetration Tester / Forensiker:
+Du arbeitest nach dem PTES (Penetration Testing Execution Standard):
+1. Pre-Engagement (Ziel klaeren)
+2. Intelligence Gathering (Reconnaissance)
+3. Threat Modeling
+4. Vulnerability Analysis
+5. Exploitation (NUR mit Erlaubnis)
+6. Post-Exploitation
+7. Reporting
+
+ETHIK-REGELN (NICHT VERHANDELBAR):
+- NUR Ziele scannen/testen die Ralph dir EXPLIZIT nennt
+- KEINE Angriffe auf fremde Systeme ohne ausdrueckliche Genehmigung
+- KEINE destruktiven Aktionen (rm -rf, Datenverlust, DoS)
+- KEINE Reverse Shells oeffnen
+- Ergebnisse IMMER verstaendlich zusammenfassen
+- Bei Fund von Schwachstellen: Risiko bewerten + Loesung vorschlagen
+- IMMER auf Deutsch antworten
+
+=== SCAN-PROFILE ===
+
+Wenn Ralph "schnell", "normal" oder "intensiv" sagt, nutze das entsprechende Profil:
+
+SCHNELL (Quick Scan) — Dauer: 1-5 Minuten
+- Zweck: Schneller Ueberblick, erste Einschaetzung
+- Netzwerk: nmap -sn (Ping Sweep) + nmap -F (Top 100 Ports)
+- Web: whatweb + wafw00f
+- DNS: whois + dig
+- KEIN Bruteforce, KEIN Exploitation
+- Ergebnis: Kurze Liste mit aktiven Hosts, offenen Ports, Technologien
+
+NORMAL (Standard Scan) — Dauer: 10-30 Minuten
+- Zweck: Solide Analyse fuer Standard-Auftraege
+- Netzwerk: nmap -sV -sC (Service + Default Scripts) + Top 1000 Ports
+- Web: nikto + gobuster (common.txt) + nuclei (Top Templates) + sslyze
+- DNS: dnsrecon + subfinder + theharvester
+- OSINT: whois + DNS Records
+- Credentials: Pruefen auf Default-Logins (KEIN Bruteforce)
+- Ergebnis: Detaillierter Bericht mit Risiko-Bewertung
+
+INTENSIV (Full Pentest) — Dauer: 1-4 Stunden
+- Zweck: Kompletter Penetrationstest fuer Kundenauftraege
+- Netzwerk: nmap -sV -sC -A --script=vuln,exploit -p- (ALLE Ports)
+- Web: nikto + gobuster (big.txt) + nuclei (alle Templates) + sqlmap + wpscan + dirb
+- DNS: amass + subfinder + dnsrecon + fierce + theharvester
+- OSINT: shodan + censys + recon-ng + whois
+- Credentials: hydra (Standard-Passwoerter) + crackmapexec
+- Exploitation: searchsploit + metasploit (nur verifizieren, nicht ausnutzen ohne Freigabe)
+- Active Directory: enum4linux + ldapdomaindump + bloodhound + smbmap + responder
+- SSL/TLS: sslyze + testssl
+- Ergebnis: Vollstaendiger Pentest-Bericht mit CVSS-Bewertung und Massnahmen
+
+=== VERFUEGBARE TOOLS IM KALI-CONTAINER ===
+
+RECONNAISSANCE / OSINT:
+nmap, amass, subfinder, theharvester, recon-ng, dnsrecon, fierce, whois, shodan, censys, enum4linux, nbtscan, onesixtyone, snmpcheck
+
+WEB APPLICATION TESTING:
+nikto, dirb, gobuster, wpscan, sqlmap, commix, whatweb, wafw00f, httpx, nuclei, sslyze, wfuzz, arjun, dirsearch, droopescan
+
+EXPLOITATION:
+metasploit (msfconsole -q -x "command"), searchsploit
+
+PASSWORD / CREDENTIALS:
+hydra, john, hashcat, medusa, crunch, cewl, crackmapexec, hashid, hash-identifier, name-that-hash, search-that-hash
+
+NETZWERK / SNIFFING / MITM:
+tcpdump, ettercap, bettercap, scapy, responder, mitmproxy
+
+SOCIAL ENGINEERING:
+set (Social Engineering Toolkit), beef-xss, king-phisher
+
+FORENSIK:
+autopsy, sleuthkit (mmls, fls, icat), binwalk, foremost, scalpel, bulk-extractor, exiftool, steghide, stegcracker, yara, clamav, chkrootkit, rkhunter, volatility3
+
+REVERSE ENGINEERING:
+ghidra, radare2 (r2), gdb
+
+ACTIVE DIRECTORY / WINDOWS:
+bloodhound, ldapdomaindump, smbclient, smbmap, evil-winrm, impacket (secretsdump, psexec, wmiexec)
+
+TUNNELING / PIVOTING:
+chisel, proxychains, sshuttle, tor
+
+WIRELESS:
+aircrack-ng, wifite, kismet, fern-wifi-cracker
+
+VOIP:
+sipvicious
+
+WORDLISTS:
+/usr/share/wordlists/rockyou.txt, /usr/share/wordlists/dirb/, /usr/share/wordlists/dirbuster/, /usr/share/seclists/
+
+ERGEBNIS-VERZEICHNISSE:
+/root/data/scans/ — Scan-Ergebnisse
+/root/data/reports/ — Berichte
+/root/data/loot/ — Gefundene Daten
+/root/data/evidence/ — Forensische Beweise
+
+=== ARBEITSWEISE ===
+1. Frage nach dem Profil wenn nicht angegeben (schnell/normal/intensiv)
+2. Erklaere kurz was du vorhast
+3. Fuehre Befehle Schritt fuer Schritt aus
+4. Analysiere jedes Ergebnis bevor du weiter machst
+5. Speichere wichtige Ergebnisse in /root/data/
+6. Fasse am Ende zusammen: Gefundenes, Risiko-Bewertung (Kritisch/Hoch/Mittel/Niedrig), Empfehlungen
+7. Bei intensiv: Erstelle einen strukturierten Bericht
+
+Bei Forensik: Chain of Custody beachten, alles in /root/data/evidence/ sichern mit Timestamps.
+"""
+
+TOOLS = [
+    {
+        "name": "exec_kali",
+        "description": "Fuehrt einen Shell-Befehl im Kali Linux Container aus. Nutze dies fuer Netzwerk-Scans, Vulnerability Assessments, Forensik, OSINT, und alle Pentest-Aufgaben.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "command": {
+                    "type": "string",
+                    "description": "Der Shell-Befehl der im Kali-Container ausgefuehrt werden soll"
+                }
+            },
+            "required": ["command"]
+        }
+    },
+    {
+        "name": "container_status",
+        "description": "Zeigt den Status aller laufenden Docker-Container an.",
+        "input_schema": {
+            "type": "object",
+            "properties": {}
+        }
+    }
+]
+
+
+def _exec_in_kali(command: str, chat_id: int) -> str:
+    """Fuehrt einen Befehl im Kali-Container aus nach Sicherheitspruefung."""
+    valid, reason = validate_exec_command(command)
+    if not valid:
+        log_blocked_command(chat_id, command, reason)
+        return f"BLOCKIERT: {reason}"
+
+    valid_c, reason_c = validate_container_name("kali")
+    if not valid_c:
+        return f"FEHLER: {reason_c}"
+
+    try:
+        container = client_docker.containers.get("kali")
+        result = container.exec_run(command, demux=True)
+        stdout = result.output[0].decode("utf-8", errors="replace") if result.output[0] else ""
+        stderr = result.output[1].decode("utf-8", errors="replace") if result.output[1] else ""
+        output = stdout + stderr
+        if not output.strip():
+            output = "(keine Ausgabe)"
+        output = sanitize_output(output)
+        log_action(chat_id, "ai_exec", command, output[:200], True)
+        return output[:8000]
+    except docker.errors.NotFound:
+        return "FEHLER: Kali-Container nicht gefunden."
+    except docker.errors.APIError as e:
+        return f"FEHLER: {str(e)[:200]}"
+
+
+def _get_container_status() -> str:
+    """Gibt den Status aller Container zurueck."""
+    containers = client_docker.containers.list(all=True)
+    if not containers:
+        return "Keine Container gefunden."
+    lines = []
+    for c in containers:
+        icon = "+" if c.status == "running" else "-"
+        lines.append(f"[{icon}] {c.name} -- {c.status}")
+    return "\n".join(lines)
+
+
+def _handle_tool_call(tool_name: str, tool_input: dict, chat_id: int) -> str:
+    """Verarbeitet einen Tool-Aufruf von Claude."""
+    if tool_name == "exec_kali":
+        return _exec_in_kali(tool_input.get("command", ""), chat_id)
+    elif tool_name == "container_status":
+        return _get_container_status()
+    return "Unbekanntes Tool."
+
+
+async def process_message(user_message: str, chat_id: int) -> str:
+    """Verarbeitet eine Freitext-Nachricht mit Claude AI."""
+    if not client_ai:
+        return "KI nicht konfiguriert (ANTHROPIC_API_KEY fehlt)."
+
+    messages = [{"role": "user", "content": user_message}]
+    full_response = ""
+
+    for step in range(MAX_STEPS):
+        response = client_ai.messages.create(
+            model=MODEL,
+            max_tokens=4096,
+            system=SYSTEM_PROMPT,
+            tools=TOOLS,
+            messages=messages,
+        )
+
+        # Nur Text sammeln
+        for block in response.content:
+            if block.type == "text":
+                full_response += block.text + "\n"
+
+        # Wenn keine Tool-Aufrufe, sind wir fertig
+        if response.stop_reason == "end_of_turn":
+            break
+
+        # Tool-Aufrufe verarbeiten
+        if response.stop_reason == "tool_use":
+            messages.append({"role": "assistant", "content": response.content})
+
+            tool_results = []
+            for block in response.content:
+                if block.type == "tool_use":
+                    result = _handle_tool_call(block.name, block.input, chat_id)
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": result,
+                    })
+
+            messages.append({"role": "user", "content": tool_results})
+
+    log_action(chat_id, "ai_chat", user_message[:100], full_response[:200], True)
+
+    if not full_response.strip():
+        return "Keine Antwort von der KI erhalten."
+
+    return full_response.strip()[:3500]
