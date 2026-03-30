@@ -207,14 +207,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
     if not user_text:
         return
-    await update.message.reply_text("Denke nach...")
     try:
         response = await process_message(user_text, update.effective_chat.id)
-        # Telegram hat 4096 Zeichen Limit, bei Bedarf aufteilen
-        while response:
-            chunk = response[:4000]
-            response = response[4000:]
-            await update.message.reply_text(chunk)
+        if response:
+            while response:
+                chunk = response[:4000]
+                response = response[4000:]
+                await update.message.reply_text(chunk)
     except Exception as e:
         await update.message.reply_text(f"Fehler: {str(e)[:500]}")
         log_action(update.effective_chat.id, "ai_chat", user_text[:100], str(e)[:200], False)

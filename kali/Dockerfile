@@ -97,6 +97,11 @@ RUN apt update && \
     # --- Sonstiges ---
     python3-pip \
     python3-venv \
+    python3-dev \
+    libcurl4-openssl-dev \
+    libssl-dev \
+    build-essential \
+    python3-pycurl \
     git \
     wget \
     curl \
@@ -108,7 +113,7 @@ RUN apt update && \
     rm -rf /var/lib/apt/lists/*
 
 # Python-basierte Pentest-Tools
-RUN pip3 install --no-cache-dir --break-system-packages \
+RUN pip3 install --no-cache-dir --break-system-packages --ignore-installed \
     shodan \
     censys \
     python-whois \
@@ -126,10 +131,8 @@ RUN pip3 install --no-cache-dir --break-system-packages \
     updog \
     dirsearch \
     droopescan \
-    wfuzz \
     arjun \
-    ldapdomaindump \
-    gophish
+    ldapdomaindump
 
 # Verzeichnisse fuer Ergebnisse
 RUN mkdir -p /root/data/scans /root/data/reports /root/data/loot /root/data/evidence

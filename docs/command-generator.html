@@ -1,0 +1,863 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cloudbot Command Generator</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; background: #0d1117; color: #c9d1d9; min-height: 100vh; }
+
+        .header { background: #161b22; border-bottom: 1px solid #30363d; padding: 15px 20px; display: flex; align-items: center; gap: 15px; }
+        .header h1 { font-size: 20px; color: #58a6ff; }
+        .header .status { font-size: 12px; color: #3fb950; background: #1a3a2a; padding: 4px 10px; border-radius: 12px; }
+
+        .container { display: grid; grid-template-columns: 300px 1fr 350px; gap: 0; height: calc(100vh - 56px); }
+
+        /* Linke Spalte - Tool-Auswahl */
+        .tools-panel { background: #161b22; border-right: 1px solid #30363d; overflow-y: auto; }
+        .tools-panel h2 { padding: 12px 15px; font-size: 13px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; position: sticky; top: 0; background: #161b22; border-bottom: 1px solid #30363d; }
+
+        .tool-category { border-bottom: 1px solid #21262d; }
+        .tool-category-header { padding: 10px 15px; cursor: pointer; display: flex; justify-content: space-between; align-items: center; font-weight: 600; font-size: 14px; color: #58a6ff; }
+        .tool-category-header:hover { background: #1c2128; }
+        .tool-category-header .arrow { transition: transform 0.2s; }
+        .tool-category.open .arrow { transform: rotate(90deg); }
+        .tool-category-items { display: none; padding: 0 10px 10px; }
+        .tool-category.open .tool-category-items { display: block; }
+
+        .tool-item { padding: 6px 10px; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 13px; margin: 2px 0; }
+        .tool-item:hover { background: #1c2128; }
+        .tool-item.selected { background: #1a3a2a; border: 1px solid #3fb950; }
+        .tool-item input[type="checkbox"] { accent-color: #3fb950; }
+        .tool-desc { color: #8b949e; font-size: 11px; }
+
+        /* Mitte - Ziel-Eingabe */
+        .main-panel { padding: 20px; overflow-y: auto; }
+
+        .section { background: #161b22; border: 1px solid #30363d; border-radius: 8px; padding: 20px; margin-bottom: 15px; }
+        .section h3 { color: #58a6ff; margin-bottom: 15px; font-size: 15px; }
+
+        .form-group { margin-bottom: 12px; }
+        .form-group label { display: block; font-size: 13px; color: #8b949e; margin-bottom: 5px; }
+        .form-group input, .form-group select, .form-group textarea { width: 100%; padding: 8px 12px; background: #0d1117; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; font-size: 14px; font-family: inherit; }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus { outline: none; border-color: #58a6ff; }
+        .form-group textarea { resize: vertical; min-height: 60px; }
+
+        .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+
+        .profile-buttons { display: flex; gap: 8px; margin-bottom: 15px; }
+        .profile-btn { padding: 10px 20px; border: 1px solid #30363d; border-radius: 6px; background: #21262d; color: #c9d1d9; cursor: pointer; font-size: 14px; font-weight: 600; flex: 1; text-align: center; transition: all 0.2s; }
+        .profile-btn:hover { border-color: #58a6ff; }
+        .profile-btn.active { background: #1a3a2a; border-color: #3fb950; color: #3fb950; }
+        .profile-btn.schnell { }
+        .profile-btn.normal { }
+        .profile-btn.intensiv { }
+
+        .btn-generate { width: 100%; padding: 12px; background: #238636; border: 1px solid #2ea043; border-radius: 6px; color: #fff; font-size: 16px; font-weight: 600; cursor: pointer; margin-top: 10px; transition: background 0.2s; }
+        .btn-generate:hover { background: #2ea043; }
+
+        .btn-clear { width: 100%; padding: 10px; background: #21262d; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; font-size: 14px; cursor: pointer; margin-top: 8px; }
+        .btn-clear:hover { border-color: #f85149; color: #f85149; }
+
+        /* Rechte Spalte - Ausgabe */
+        .output-panel { background: #161b22; border-left: 1px solid #30363d; padding: 15px; display: flex; flex-direction: column; }
+        .output-panel h2 { font-size: 13px; color: #8b949e; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
+
+        .output-box { flex: 1; background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 15px; font-family: 'Consolas', 'Courier New', monospace; font-size: 14px; line-height: 1.6; color: #e6edf3; white-space: pre-wrap; word-break: break-word; overflow-y: auto; margin-bottom: 10px; }
+
+        .btn-copy { width: 100%; padding: 12px; background: #1f6feb; border: 1px solid #388bfd; border-radius: 6px; color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+        .btn-copy:hover { background: #388bfd; }
+        .btn-copy.copied { background: #238636; border-color: #2ea043; }
+
+        .history { margin-top: 10px; }
+        .history h3 { font-size: 12px; color: #8b949e; margin-bottom: 8px; }
+        .history-item { padding: 8px; background: #0d1117; border: 1px solid #21262d; border-radius: 4px; margin-bottom: 5px; font-size: 12px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .history-item:hover { border-color: #58a6ff; }
+
+        .selected-tools { margin-top: 10px; }
+        .selected-tools h3 { font-size: 12px; color: #8b949e; margin-bottom: 8px; }
+        .tag { display: inline-block; padding: 3px 8px; background: #1a3a2a; border: 1px solid #3fb950; border-radius: 4px; font-size: 11px; color: #3fb950; margin: 2px; }
+    </style>
+</head>
+<body>
+
+<div class="header">
+    <h1>Cloudbot Command Generator</h1>
+    <span class="status">Telegram Bot aktiv</span>
+</div>
+
+<div class="container">
+    <!-- LINKE SPALTE: Tools -->
+    <div class="tools-panel">
+        <h2>Tools auswaehlen</h2>
+
+        <div class="tool-category open" data-category="recon">
+            <div class="tool-category-header" onclick="toggleCategory(this)">
+                Reconnaissance / OSINT <span class="arrow">&#9654;</span>
+            </div>
+            <div class="tool-category-items">
+                <label class="tool-item"><input type="checkbox" value="nmap" data-cmd="nmap -sV -sC {target}"> nmap <span class="tool-desc">Port-Scanner</span></label>
+                <label class="tool-item"><input type="checkbox" value="amass" data-cmd="amass enum -d {domain}"> amass <span class="tool-desc">Subdomain Enum</span></label>
+                <label class="tool-item"><input type="checkbox" value="subfinder" data-cmd="subfinder -d {domain}"> subfinder <span class="tool-desc">Subdomain-Suche</span></label>
+                <label class="tool-item"><input type="checkbox" value="theharvester" data-cmd="theHarvester -d {domain} -b all"> theHarvester <span class="tool-desc">Email/OSINT</span></label>
+                <label class="tool-item"><input type="checkbox" value="recon-ng" data-cmd="recon-ng"> recon-ng <span class="tool-desc">OSINT Framework</span></label>
+                <label class="tool-item"><input type="checkbox" value="dnsrecon" data-cmd="dnsrecon -d {domain}"> dnsrecon <span class="tool-desc">DNS Recon</span></label>
+                <label class="tool-item"><input type="checkbox" value="fierce" data-cmd="fierce --domain {domain}"> fierce <span class="tool-desc">DNS Scanner</span></label>
+                <label class="tool-item"><input type="checkbox" value="whois" data-cmd="whois {domain}"> whois <span class="tool-desc">Domain-Info</span></label>
+                <label class="tool-item"><input type="checkbox" value="shodan" data-cmd="shodan host {ip}"> shodan <span class="tool-desc">Internet-Suche</span></label>
+                <label class="tool-item"><input type="checkbox" value="enum4linux" data-cmd="enum4linux {target}"> enum4linux <span class="tool-desc">SMB/Windows Enum</span></label>
+            </div>
+        </div>
+
+        <div class="tool-category" data-category="web">
+            <div class="tool-category-header" onclick="toggleCategory(this)">
+                Web Application <span class="arrow">&#9654;</span>
+            </div>
+            <div class="tool-category-items">
+                <label class="tool-item"><input type="checkbox" value="nikto" data-cmd="nikto -h {url}"> nikto <span class="tool-desc">Web Vuln Scanner</span></label>
+                <label class="tool-item"><input type="checkbox" value="gobuster" data-cmd="gobuster dir -u {url} -w /usr/share/wordlists/dirb/common.txt"> gobuster <span class="tool-desc">Dir Bruteforce</span></label>
+                <label class="tool-item"><input type="checkbox" value="dirb" data-cmd="dirb {url}"> dirb <span class="tool-desc">Dir Scanner</span></label>
+                <label class="tool-item"><input type="checkbox" value="wpscan" data-cmd="wpscan --url {url}"> wpscan <span class="tool-desc">WordPress</span></label>
+                <label class="tool-item"><input type="checkbox" value="sqlmap" data-cmd="sqlmap -u {url}"> sqlmap <span class="tool-desc">SQL Injection</span></label>
+                <label class="tool-item"><input type="checkbox" value="whatweb" data-cmd="whatweb {url}"> whatweb <span class="tool-desc">Web Fingerprint</span></label>
+                <label class="tool-item"><input type="checkbox" value="wafw00f" data-cmd="wafw00f {url}"> wafw00f <span class="tool-desc">WAF Detection</span></label>
+                <label class="tool-item"><input type="checkbox" value="nuclei" data-cmd="nuclei -u {url}"> nuclei <span class="tool-desc">Vuln Scanner</span></label>
+                <label class="tool-item"><input type="checkbox" value="sslyze" data-cmd="sslyze {domain}"> sslyze <span class="tool-desc">SSL/TLS Analyse</span></label>
+                <label class="tool-item"><input type="checkbox" value="commix" data-cmd="commix -u {url}"> commix <span class="tool-desc">Command Injection</span></label>
+            </div>
+        </div>
+
+        <div class="tool-category" data-category="exploit">
+            <div class="tool-category-header" onclick="toggleCategory(this)">
+                Exploitation <span class="arrow">&#9654;</span>
+            </div>
+            <div class="tool-category-items">
+                <label class="tool-item"><input type="checkbox" value="metasploit" data-cmd="msfconsole -q -x 'search {keyword}'"> metasploit <span class="tool-desc">Exploit Framework</span></label>
+                <label class="tool-item"><input type="checkbox" value="searchsploit" data-cmd="searchsploit {keyword}"> searchsploit <span class="tool-desc">Exploit-DB Suche</span></label>
+            </div>
+        </div>
+
+        <div class="tool-category" data-category="password">
+            <div class="tool-category-header" onclick="toggleCategory(this)">
+                Password / Credentials <span class="arrow">&#9654;</span>
+            </div>
+            <div class="tool-category-items">
+                <label class="tool-item"><input type="checkbox" value="hydra" data-cmd="hydra -l {user} -P /usr/share/wordlists/rockyou.txt {target} {protocol}"> hydra <span class="tool-desc">Brute Force</span></label>
+                <label class="tool-item"><input type="checkbox" value="john" data-cmd="john --wordlist=/usr/share/wordlists/rockyou.txt {file}"> john <span class="tool-desc">Password Cracker</span></label>
+                <label class="tool-item"><input type="checkbox" value="hashcat" data-cmd="hashcat -m 0 {file} /usr/share/wordlists/rockyou.txt"> hashcat <span class="tool-desc">Hash Cracker</span></label>
+                <label class="tool-item"><input type="checkbox" value="medusa" data-cmd="medusa -h {target} -u {user} -P /usr/share/wordlists/rockyou.txt -M {protocol}"> medusa <span class="tool-desc">Parallel Brute Force</span></label>
+                <label class="tool-item"><input type="checkbox" value="crackmapexec" data-cmd="crackmapexec smb {target} -u {user} -p {password}"> crackmapexec <span class="tool-desc">Netzwerk Auth</span></label>
+                <label class="tool-item"><input type="checkbox" value="cewl" data-cmd="cewl {url} -w wordlist.txt"> cewl <span class="tool-desc">Wordlist Generator</span></label>
+            </div>
+        </div>
+
+        <div class="tool-category" data-category="network">
+            <div class="tool-category-header" onclick="toggleCategory(this)">
+                Netzwerk / Sniffing <span class="arrow">&#9654;</span>
+            </div>
+            <div class="tool-category-items">
+                <label class="tool-item"><input type="checkbox" value="tcpdump" data-cmd="tcpdump -i eth0 -w /root/data/scans/capture.pcap"> tcpdump <span class="tool-desc">Packet Capture</span></label>
+                <label class="tool-item"><input type="checkbox" value="ettercap" data-cmd="ettercap -T -q -i eth0"> ettercap <span class="tool-desc">MITM</span></label>
+                <label class="tool-item"><input type="checkbox" value="bettercap" data-cmd="bettercap -iface eth0"> bettercap <span class="tool-desc">Netzwerk-Angriffe</span></label>
+                <label class="tool-item"><input type="checkbox" value="responder" data-cmd="responder -I eth0"> responder <span class="tool-desc">LLMNR/NBT-NS</span></label>
+            </div>
+        </div>
+
+        <div class="tool-category" data-category="social">
+            <div class="tool-category-header" onclick="toggleCategory(this)">
+                Social Engineering <span class="arrow">&#9654;</span>
+            </div>
+            <div class="tool-category-items">
+                <label class="tool-item"><input type="checkbox" value="set" data-cmd="setoolkit"> SET <span class="tool-desc">SE Toolkit</span></label>
+                <label class="tool-item"><input type="checkbox" value="beef" data-cmd="beef-xss"> BeEF <span class="tool-desc">Browser Exploit</span></label>
+            </div>
+        </div>
+
+        <div class="tool-category" data-category="forensik">
+            <div class="tool-category-header" onclick="toggleCategory(this)">
+                Forensik <span class="arrow">&#9654;</span>
+            </div>
+            <div class="tool-category-items">
+                <label class="tool-item"><input type="checkbox" value="autopsy" data-cmd="autopsy"> autopsy <span class="tool-desc">Festplatten-Analyse</span></label>
+                <label class="tool-item"><input type="checkbox" value="binwalk" data-cmd="binwalk {file}"> binwalk <span class="tool-desc">Firmware Analyse</span></label>
+                <label class="tool-item"><input type="checkbox" value="foremost" data-cmd="foremost -i {file} -o /root/data/evidence/"> foremost <span class="tool-desc">Datei Recovery</span></label>
+                <label class="tool-item"><input type="checkbox" value="steghide" data-cmd="steghide extract -sf {file}"> steghide <span class="tool-desc">Steganographie</span></label>
+                <label class="tool-item"><input type="checkbox" value="exiftool" data-cmd="exiftool {file}"> exiftool <span class="tool-desc">Metadaten</span></label>
+                <label class="tool-item"><input type="checkbox" value="volatility" data-cmd="vol3 -f {file} windows.info"> volatility3 <span class="tool-desc">RAM Analyse</span></label>
+                <label class="tool-item"><input type="checkbox" value="yara" data-cmd="yara {rules} {file}"> yara <span class="tool-desc">Malware Pattern</span></label>
+                <label class="tool-item"><input type="checkbox" value="clamav" data-cmd="clamscan -r {path}"> clamav <span class="tool-desc">Malware Scanner</span></label>
+                <label class="tool-item"><input type="checkbox" value="chkrootkit" data-cmd="chkrootkit"> chkrootkit <span class="tool-desc">Rootkit Check</span></label>
+            </div>
+        </div>
+
+        <div class="tool-category" data-category="reverse">
+            <div class="tool-category-header" onclick="toggleCategory(this)">
+                Reverse Engineering <span class="arrow">&#9654;</span>
+            </div>
+            <div class="tool-category-items">
+                <label class="tool-item"><input type="checkbox" value="ghidra" data-cmd="ghidra"> ghidra <span class="tool-desc">Binary Analyse</span></label>
+                <label class="tool-item"><input type="checkbox" value="radare2" data-cmd="r2 {file}"> radare2 <span class="tool-desc">Disassembler</span></label>
+                <label class="tool-item"><input type="checkbox" value="gdb" data-cmd="gdb {file}"> gdb <span class="tool-desc">Debugger</span></label>
+            </div>
+        </div>
+
+        <div class="tool-category" data-category="ad">
+            <div class="tool-category-header" onclick="toggleCategory(this)">
+                Active Directory <span class="arrow">&#9654;</span>
+            </div>
+            <div class="tool-category-items">
+                <label class="tool-item"><input type="checkbox" value="bloodhound" data-cmd="bloodhound-python -d {domain} -u {user} -p {password} -ns {target}"> bloodhound <span class="tool-desc">AD Mapping</span></label>
+                <label class="tool-item"><input type="checkbox" value="smbmap" data-cmd="smbmap -H {target}"> smbmap <span class="tool-desc">SMB Shares</span></label>
+                <label class="tool-item"><input type="checkbox" value="smbclient" data-cmd="smbclient -L {target}"> smbclient <span class="tool-desc">SMB Client</span></label>
+                <label class="tool-item"><input type="checkbox" value="evil-winrm" data-cmd="evil-winrm -i {target} -u {user} -p {password}"> evil-winrm <span class="tool-desc">WinRM Shell</span></label>
+                <label class="tool-item"><input type="checkbox" value="impacket" data-cmd="impacket-secretsdump {domain}/{user}:{password}@{target}"> impacket <span class="tool-desc">Windows Tools</span></label>
+            </div>
+        </div>
+
+        <div class="tool-category" data-category="tunnel">
+            <div class="tool-category-header" onclick="toggleCategory(this)">
+                Tunneling / Pivoting <span class="arrow">&#9654;</span>
+            </div>
+            <div class="tool-category-items">
+                <label class="tool-item"><input type="checkbox" value="proxychains" data-cmd="proxychains {command}"> proxychains <span class="tool-desc">Proxy Chain</span></label>
+                <label class="tool-item"><input type="checkbox" value="chisel" data-cmd="chisel client {target}:8080 R:socks"> chisel <span class="tool-desc">TCP Tunnel</span></label>
+                <label class="tool-item"><input type="checkbox" value="sshuttle" data-cmd="sshuttle -r {user}@{target} {subnet}"> sshuttle <span class="tool-desc">SSH VPN</span></label>
+            </div>
+        </div>
+
+        <div class="tool-category" data-category="wireless">
+            <div class="tool-category-header" onclick="toggleCategory(this)">
+                Wireless <span class="arrow">&#9654;</span>
+            </div>
+            <div class="tool-category-items">
+                <label class="tool-item"><input type="checkbox" value="aircrack" data-cmd="aircrack-ng {file}"> aircrack-ng <span class="tool-desc">WLAN Cracker</span></label>
+                <label class="tool-item"><input type="checkbox" value="wifite" data-cmd="wifite"> wifite <span class="tool-desc">Auto WLAN Hack</span></label>
+                <label class="tool-item"><input type="checkbox" value="kismet" data-cmd="kismet"> kismet <span class="tool-desc">WLAN Scanner</span></label>
+            </div>
+        </div>
+    </div>
+
+    <!-- MITTE: Ziel-Eingabe -->
+    <div class="main-panel">
+
+        <div class="section">
+            <h3>Modus</h3>
+            <div class="profile-buttons" style="margin-bottom:10px;">
+                <div class="profile-btn manuell" onclick="selectMode('manuell')">Manuell<br><span style="font-size:11px;color:#8b949e">Tools selbst waehlen</span></div>
+                <div class="profile-btn auto active" onclick="selectMode('auto')">Automatisch<br><span style="font-size:11px;color:#8b949e">Tools passend zu Eingabe</span></div>
+            </div>
+            <h3>Scan-Profil</h3>
+            <div class="profile-buttons">
+                <div class="profile-btn schnell" onclick="selectProfile('schnell')">Schnell<br><span style="font-size:11px;color:#8b949e">1-5 Min</span></div>
+                <div class="profile-btn normal" onclick="selectProfile('normal')">Normal<br><span style="font-size:11px;color:#8b949e">10-30 Min</span></div>
+                <div class="profile-btn intensiv" onclick="selectProfile('intensiv')">Intensiv<br><span style="font-size:11px;color:#8b949e">1-4 Std</span></div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h3>Ziel — Netzwerk / Web</h3>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Domain / URL</label>
+                    <input type="text" id="target" placeholder="z.B. hackthissite.org">
+                </div>
+                <div class="form-group">
+                    <label>IP-Adresse</label>
+                    <input type="text" id="targetIP" placeholder="z.B. 192.168.178.1">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Netzwerk (Subnet)</label>
+                    <input type="text" id="targetNetwork" placeholder="z.B. 192.168.178.0/24">
+                </div>
+                <div class="form-group">
+                    <label>Protokoll</label>
+                    <select id="protocol">
+                        <option value="">- Automatisch -</option>
+                        <option value="ssh">SSH</option>
+                        <option value="ftp">FTP</option>
+                        <option value="http">HTTP</option>
+                        <option value="https">HTTPS</option>
+                        <option value="smb">SMB</option>
+                        <option value="rdp">RDP</option>
+                        <option value="mysql">MySQL</option>
+                        <option value="mssql">MSSQL</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Port-Range</label>
+                    <input type="text" id="ports" placeholder="z.B. 80,443 oder 1-1000">
+                </div>
+                <div class="form-group">
+                    <label>Wordlist</label>
+                    <select id="wordlist">
+                        <option value="">Standard</option>
+                        <option value="/usr/share/wordlists/rockyou.txt">rockyou.txt</option>
+                        <option value="/usr/share/wordlists/dirb/common.txt">dirb/common.txt</option>
+                        <option value="/usr/share/wordlists/dirb/big.txt">dirb/big.txt</option>
+                        <option value="/usr/share/seclists/Discovery/Web-Content/raft-large-words.txt">SecLists raft-large</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Benutzername</label>
+                    <input type="text" id="username" placeholder="z.B. admin">
+                </div>
+                <div class="form-group">
+                    <label>Passwort</label>
+                    <input type="text" id="password" placeholder="optional">
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h3>OSINT — Person</h3>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Vorname</label>
+                    <input type="text" id="firstName" placeholder="z.B. Max">
+                </div>
+                <div class="form-group">
+                    <label>Nachname</label>
+                    <input type="text" id="lastName" placeholder="z.B. Mustermann">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>E-Mail (bekannt)</label>
+                    <input type="text" id="personEmail" placeholder="z.B. max@example.com">
+                </div>
+                <div class="form-group">
+                    <label>Telefonnummer</label>
+                    <input type="text" id="personPhone" placeholder="z.B. +49 170 1234567">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Firma / Arbeitgeber</label>
+                    <input type="text" id="personCompany" placeholder="z.B. Firma GmbH">
+                </div>
+                <div class="form-group">
+                    <label>Position / Rolle</label>
+                    <input type="text" id="personRole" placeholder="z.B. Geschaeftsfuehrer">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Stadt / Region</label>
+                    <input type="text" id="personCity" placeholder="z.B. Berlin">
+                </div>
+                <div class="form-group">
+                    <label>Land</label>
+                    <input type="text" id="personCountry" placeholder="z.B. Deutschland">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Social Media Username</label>
+                    <input type="text" id="personSocial" placeholder="z.B. @maxmuster">
+                </div>
+                <div class="form-group">
+                    <label>Webseite / Domain (bekannt)</label>
+                    <input type="text" id="personWebsite" placeholder="z.B. www.maxmustermann.de">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Plattformen pruefen</label>
+                    <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:5px;">
+                        <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="pLinkedin"> LinkedIn</label>
+                        <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="pXing"> XING</label>
+                        <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="pTwitter"> Twitter/X</label>
+                        <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="pFacebook"> Facebook</label>
+                        <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="pInstagram"> Instagram</label>
+                        <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="pGithub"> GitHub</label>
+                        <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="pReddit"> Reddit</label>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>OSINT Suchtiefe</label>
+                    <select id="osintDepth">
+                        <option value="basic">Basis — Name, Email, Social Media</option>
+                        <option value="standard" selected>Standard — + Firma, Domains, Breaches</option>
+                        <option value="deep">Tief — + Darknet, Leaks, Verbindungen</option>
+                        <option value="full">Komplett — Alles verfuegbare</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h3>OSINT — E-Mail</h3>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>E-Mail Adresse</label>
+                    <input type="text" id="emailAddr" placeholder="z.B. info@example.com">
+                </div>
+                <div class="form-group">
+                    <label>Zugehoerige Domain</label>
+                    <input type="text" id="emailDomain" placeholder="z.B. example.com">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Bekannter Name zur E-Mail</label>
+                <input type="text" id="emailName" placeholder="z.B. Max Mustermann">
+            </div>
+            <div class="form-group">
+                <label>Pruefungen</label>
+                <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:5px;">
+                    <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="chkBreach" checked> Data Breaches</label>
+                    <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="chkPaste" checked> Paste Sites</label>
+                    <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="chkSocial" checked> Social Media</label>
+                    <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="chkDomain" checked> Domain-Verknuepfung</label>
+                    <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="chkReputation"> Reputation</label>
+                    <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="chkDarknet"> Darknet</label>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h3>Forensik — Datei</h3>
+            <div class="form-group">
+                <label>Dateipfad</label>
+                <input type="text" id="forensicFile" placeholder="z.B. /root/data/evidence/image.jpg">
+            </div>
+        </div>
+
+        <div class="section">
+            <h3>Exploit-Modus</h3>
+            <div class="profile-buttons">
+                <div class="profile-btn exploit-nein active" onclick="selectExploit('nein')">Nur identifizieren<br><span style="font-size:11px;color:#8b949e">Schwachstellen finden, nicht ausnutzen</span></div>
+                <div class="profile-btn exploit-fragen" onclick="selectExploit('fragen')">Nachfragen<br><span style="font-size:11px;color:#8b949e">Vor Exploit-Ausfuehrung fragen</span></div>
+                <div class="profile-btn exploit-ja" onclick="selectExploit('ja')">Exploits ausfuehren<br><span style="font-size:11px;color:#8b949e">Automatisch ausnutzen</span></div>
+            </div>
+        </div>
+
+        <div class="section">
+            <h3>Zusaetzliche Anweisungen</h3>
+            <div class="form-group">
+                <textarea id="extraInstructions" placeholder="z.B. 'Erstelle einen vollstaendigen Bericht' oder 'Fokus auf Web-Schwachstellen'" rows="3"></textarea>
+            </div>
+        </div>
+
+        <button class="btn-generate" onclick="generateCommand()">Befehl generieren</button>
+        <button class="btn-clear" onclick="clearAll()">Alles zuruecksetzen</button>
+    </div>
+
+    <!-- RECHTE SPALTE: Ausgabe -->
+    <div class="output-panel">
+        <h2>Generierter Befehl</h2>
+        <div class="output-box" id="output">Waehle Tools und Ziel aus, dann klicke "Befehl generieren".</div>
+        <button class="btn-copy" id="copyBtn" onclick="copyToClipboard()">In Zwischenablage kopieren</button>
+
+        <div class="selected-tools" id="selectedToolsDisplay">
+            <h3>Ausgewaehlte Tools</h3>
+            <div id="toolTags">Keine Tools ausgewaehlt</div>
+        </div>
+
+        <div class="history">
+            <h3>Letzte Befehle</h3>
+            <div id="historyList"></div>
+        </div>
+    </div>
+</div>
+
+<script>
+let selectedProfile = '';
+let selectedMode = 'auto';
+let selectedExploit = 'nein';
+let history = JSON.parse(localStorage.getItem('cmdHistory') || '[]');
+
+function toggleCategory(header) {
+    header.parentElement.classList.toggle('open');
+}
+
+function selectMode(mode) {
+    selectedMode = mode;
+    document.querySelectorAll('.profile-btn.manuell, .profile-btn.auto').forEach(b => b.classList.remove('active'));
+    document.querySelector(`.profile-btn.${mode}`).classList.add('active');
+
+    const toolsPanel = document.querySelector('.tools-panel');
+    if (mode === 'auto') {
+        toolsPanel.style.opacity = '0.4';
+        toolsPanel.style.pointerEvents = 'none';
+    } else {
+        toolsPanel.style.opacity = '1';
+        toolsPanel.style.pointerEvents = 'auto';
+    }
+}
+
+function selectProfile(profile) {
+    selectedProfile = profile;
+    document.querySelectorAll('.profile-btn.schnell, .profile-btn.normal, .profile-btn.intensiv').forEach(b => b.classList.remove('active'));
+    document.querySelector(`.profile-btn.${profile}`).classList.add('active');
+}
+
+function selectExploit(mode) {
+    selectedExploit = mode;
+    document.querySelectorAll('.profile-btn.exploit-nein, .profile-btn.exploit-fragen, .profile-btn.exploit-ja').forEach(b => b.classList.remove('active'));
+    document.querySelector(`.profile-btn.exploit-${mode}`).classList.add('active');
+}
+
+function autoSelectTools() {
+    // Alle Checkboxen zuruecksetzen
+    document.querySelectorAll('.tool-category input[type="checkbox"]').forEach(cb => cb.checked = false);
+
+    const target = document.getElementById('target').value;
+    const targetIP = document.getElementById('targetIP').value;
+    const targetNetwork = document.getElementById('targetNetwork').value;
+    const hasPerson = document.getElementById('firstName').value || document.getElementById('lastName').value;
+    const hasEmail = document.getElementById('emailAddr').value;
+    const hasForensic = document.getElementById('forensicFile').value;
+    const hasCredentials = document.getElementById('username').value;
+    const profile = selectedProfile || 'normal';
+
+    // --- Domain/Web ---
+    if (target) {
+        check('whatweb');
+        check('wafw00f');
+        check('whois');
+        check('dnsrecon');
+        if (profile === 'normal' || profile === 'intensiv') {
+            check('nmap');
+            check('nikto');
+            check('gobuster');
+            check('nuclei');
+            check('sslyze');
+            check('subfinder');
+            check('theharvester');
+        }
+        if (profile === 'intensiv') {
+            check('amass');
+            check('fierce');
+            check('sqlmap');
+            check('dirb');
+            check('commix');
+            check('shodan');
+        }
+    }
+
+    // --- IP ---
+    if (targetIP) {
+        check('nmap');
+        check('shodan');
+        if (profile === 'normal' || profile === 'intensiv') {
+            check('nikto');
+            check('enum4linux');
+            check('smbmap');
+        }
+        if (profile === 'intensiv') {
+            check('nuclei');
+            check('searchsploit');
+            check('smbclient');
+        }
+    }
+
+    // --- Netzwerk ---
+    if (targetNetwork) {
+        check('nmap');
+        if (profile === 'normal' || profile === 'intensiv') {
+            check('enum4linux');
+            check('smbmap');
+            check('responder');
+        }
+        if (profile === 'intensiv') {
+            check('crackmapexec');
+            check('bettercap');
+        }
+    }
+
+    // --- OSINT Person ---
+    if (hasPerson) {
+        check('theharvester');
+        check('whois');
+        check('shodan');
+        if (profile === 'normal' || profile === 'intensiv') {
+            check('recon-ng');
+            check('dnsrecon');
+        }
+        if (profile === 'intensiv') {
+            check('amass');
+            check('subfinder');
+        }
+    }
+
+    // --- OSINT Email ---
+    if (hasEmail) {
+        check('theharvester');
+        if (profile === 'normal' || profile === 'intensiv') {
+            check('recon-ng');
+            check('whois');
+        }
+        if (profile === 'intensiv') {
+            check('shodan');
+        }
+    }
+
+    // --- Forensik ---
+    if (hasForensic) {
+        check('binwalk');
+        check('exiftool');
+        check('steghide');
+        if (profile === 'normal' || profile === 'intensiv') {
+            check('foremost');
+            check('yara');
+            check('clamav');
+        }
+        if (profile === 'intensiv') {
+            check('autopsy');
+            check('volatility');
+            check('chkrootkit');
+        }
+    }
+
+    // --- Credentials vorhanden ---
+    if (hasCredentials) {
+        if (profile === 'normal' || profile === 'intensiv') {
+            check('hydra');
+            check('crackmapexec');
+        }
+        if (profile === 'intensiv') {
+            check('medusa');
+            check('evil-winrm');
+            check('bloodhound');
+            check('impacket');
+        }
+    }
+
+    updateToolTags();
+}
+
+function check(toolName) {
+    const cb = document.querySelector(`.tool-item input[value="${toolName}"]`);
+    if (cb) cb.checked = true;
+}
+
+function updateForm() { /* nicht mehr noetig - alle Felder sichtbar */ }
+
+// Auto-Modus beim Start aktivieren
+document.addEventListener('DOMContentLoaded', function() {
+    selectMode('auto');
+});
+
+function getSelectedTools() {
+    const tools = [];
+    document.querySelectorAll('.tool-item input:checked').forEach(cb => {
+        tools.push(cb.value);
+    });
+    return tools;
+}
+
+function updateToolTags() {
+    const tools = getSelectedTools();
+    const container = document.getElementById('toolTags');
+    if (tools.length === 0) {
+        container.innerHTML = 'Keine Tools ausgewaehlt';
+    } else {
+        container.innerHTML = tools.map(t => `<span class="tag">${t}</span>`).join('');
+    }
+}
+
+document.querySelectorAll('.tool-item input').forEach(cb => {
+    cb.addEventListener('change', updateToolTags);
+});
+
+function generateCommand() {
+    const target = document.getElementById('target').value;
+    const targetIP = document.getElementById('targetIP').value;
+    const targetNetwork = document.getElementById('targetNetwork').value;
+    const protocol = document.getElementById('protocol').value;
+    const username = document.getElementById('username').value;
+    const password = document.getElementById('password').value;
+    const ports = document.getElementById('ports').value;
+    const wordlist = document.getElementById('wordlist').value;
+
+    const fName = document.getElementById('firstName').value;
+    const lName = document.getElementById('lastName').value;
+    const pEmail = document.getElementById('personEmail').value;
+    const pPhone = document.getElementById('personPhone').value;
+    const pCompany = document.getElementById('personCompany').value;
+    const pRole = document.getElementById('personRole').value;
+    const pCity = document.getElementById('personCity').value;
+    const pCountry = document.getElementById('personCountry').value;
+    const pSocial = document.getElementById('personSocial').value;
+    const pWebsite = document.getElementById('personWebsite').value;
+    const pDepth = document.getElementById('osintDepth').value;
+
+    const emailAddr = document.getElementById('emailAddr').value;
+    const emailDomain = document.getElementById('emailDomain').value;
+    const emailName = document.getElementById('emailName').value;
+
+    const forensicFile = document.getElementById('forensicFile').value;
+    const extra = document.getElementById('extraInstructions').value;
+    const tools = getSelectedTools();
+
+    // Im Auto-Modus Tools automatisch waehlen
+    if (selectedMode === 'auto') {
+        autoSelectTools();
+    }
+
+    // Pruefen ob ueberhaupt etwas eingegeben wurde
+    const hasTarget = target || targetIP || targetNetwork;
+    const hasPerson = fName || lName || pEmail || pPhone || pCompany || pSocial;
+    const hasEmail = emailAddr;
+    const hasForensic = forensicFile;
+
+    if (!hasTarget && !hasPerson && !hasEmail && !hasForensic) {
+        alert('Bitte mindestens ein Ziel eingeben'); return;
+    }
+
+    let command = '';
+
+    // Profil
+    if (selectedProfile) {
+        command += `Profil: ${selectedProfile}\n\n`;
+    }
+
+    // --- Netzwerk / Web Ziele ---
+    if (hasTarget) {
+        const targets = [target, targetIP, targetNetwork].filter(Boolean);
+        command += `Analysiere: ${targets.join(', ')}`;
+        if (protocol) command += ` (${protocol})`;
+        if (ports) command += `\nPorts: ${ports}`;
+        if (username) command += `\nBenutzername: ${username}`;
+        if (password) command += `\nPasswort: ${password}`;
+        if (wordlist) command += `\nWordlist: ${wordlist}`;
+        command += '\n';
+    }
+
+    // --- OSINT Person ---
+    if (hasPerson) {
+        const fullName = (fName + ' ' + lName).trim();
+        if (hasTarget) command += '\n';
+        command += `OSINT-Recherche zu Person: ${fullName}`;
+        command += '\n\nBekannte Informationen:';
+        if (pEmail) command += `\n- E-Mail: ${pEmail}`;
+        if (pPhone) command += `\n- Telefon: ${pPhone}`;
+        if (pCompany) command += `\n- Firma: ${pCompany}`;
+        if (pRole) command += `\n- Position: ${pRole}`;
+        if (pCity || pCountry) command += `\n- Ort: ${[pCity, pCountry].filter(Boolean).join(', ')}`;
+        if (pSocial) command += `\n- Social Media: ${pSocial}`;
+        if (pWebsite) command += `\n- Webseite: ${pWebsite}`;
+
+        // Plattformen
+        const platforms = [];
+        if (document.getElementById('pLinkedin').checked) platforms.push('LinkedIn');
+        if (document.getElementById('pXing').checked) platforms.push('XING');
+        if (document.getElementById('pTwitter').checked) platforms.push('Twitter/X');
+        if (document.getElementById('pFacebook').checked) platforms.push('Facebook');
+        if (document.getElementById('pInstagram').checked) platforms.push('Instagram');
+        if (document.getElementById('pGithub').checked) platforms.push('GitHub');
+        if (document.getElementById('pReddit').checked) platforms.push('Reddit');
+        if (platforms.length > 0) command += `\n- Plattformen pruefen: ${platforms.join(', ')}`;
+
+        const depthLabels = { basic: 'Basis', standard: 'Standard', deep: 'Tiefenrecherche', full: 'Komplettanalyse' };
+        command += `\n\nSuchtiefe: ${depthLabels[pDepth]}`;
+        if (pDepth === 'deep' || pDepth === 'full') {
+            command += '\nPruefe auch: Data Breaches, Paste Sites, Darknet-Mentions, Leak-Datenbanken';
+        }
+        if (pDepth === 'full') {
+            command += '\nErstelle ein komplettes Dossier mit allen Verbindungen, Accounts, Aktivitaeten';
+        }
+        command += '\n';
+    }
+
+    // --- OSINT Email ---
+    if (hasEmail) {
+        if (hasTarget || hasPerson) command += '\n';
+        command += `OSINT-Recherche zu E-Mail: ${emailAddr}`;
+        if (emailName) command += `\nBekannter Name: ${emailName}`;
+        if (emailDomain) command += `\nZugehoerige Domain: ${emailDomain}`;
+
+        const checks = [];
+        if (document.getElementById('chkBreach').checked) checks.push('Data Breaches');
+        if (document.getElementById('chkPaste').checked) checks.push('Paste Sites');
+        if (document.getElementById('chkSocial').checked) checks.push('Social Media');
+        if (document.getElementById('chkDomain').checked) checks.push('Domain-Verknuepfungen');
+        if (document.getElementById('chkReputation').checked) checks.push('Reputation');
+        if (document.getElementById('chkDarknet').checked) checks.push('Darknet');
+        if (checks.length > 0) command += `\nPruefe: ${checks.join(', ')}`;
+        command += '\n';
+    }
+
+    // --- Forensik ---
+    if (hasForensic) {
+        if (hasTarget || hasPerson || hasEmail) command += '\n';
+        command += `Forensische Analyse der Datei: ${forensicFile}\n`;
+    }
+
+    // --- Tools ---
+    if (tools.length > 0) {
+        command += `\nNutze folgende Tools: ${tools.join(', ')}`;
+    }
+
+    // --- Exploit-Modus ---
+    if (selectedExploit === 'ja') {
+        command += `\n\nExploits ausfuehren: Gefundene Schwachstellen aktiv ausnutzen und dokumentieren.`;
+    } else if (selectedExploit === 'fragen') {
+        command += `\n\nBei gefundenen Schwachstellen: Frage mich vor der Ausfuehrung ob Exploits angewendet werden sollen.`;
+    } else {
+        command += `\n\nNur identifizieren, keine Exploits ausfuehren.`;
+    }
+
+    // --- Extra ---
+    if (extra) command += `\n\n${extra}`;
+
+    // Ergebnis speichern
+    command += `\n\nSpeichere alle Ergebnisse in /root/data/scans/`;
+
+    document.getElementById('output').textContent = command;
+
+    // History
+    history.unshift(command.substring(0, 80) + '...');
+    if (history.length > 10) history = history.slice(0, 10);
+    localStorage.setItem('cmdHistory', JSON.stringify(history));
+    renderHistory();
+}
+
+function copyToClipboard() {
+    const text = document.getElementById('output').textContent;
+    navigator.clipboard.writeText(text).then(() => {
+        const btn = document.getElementById('copyBtn');
+        btn.textContent = 'Kopiert!';
+        btn.classList.add('copied');
+        setTimeout(() => {
+            btn.textContent = 'In Zwischenablage kopieren';
+            btn.classList.remove('copied');
+        }, 2000);
+    });
+}
+
+function clearAll() {
+    document.querySelectorAll('input[type="text"], textarea').forEach(el => el.value = '');
+    document.querySelectorAll('select').forEach(el => el.selectedIndex = 0);
+    document.querySelectorAll('.tool-category input[type="checkbox"]').forEach(cb => cb.checked = false);
+    document.getElementById('chkBreach').checked = true;
+    document.getElementById('chkPaste').checked = true;
+    document.getElementById('chkSocial').checked = true;
+    document.getElementById('chkDomain').checked = true;
+    document.getElementById('wordlist').value = '';
+    document.getElementById('output').textContent = 'Waehle Tools und Ziel aus, dann klicke "Befehl generieren".';
+    document.querySelectorAll('.tool-item input:checked').forEach(cb => cb.checked = false);
+    document.querySelectorAll('.profile-btn').forEach(b => b.classList.remove('active'));
+    selectedProfile = '';
+    updateToolTags();
+}
+
+function renderHistory() {
+    const container = document.getElementById('historyList');
+    container.innerHTML = history.map(h =>
+        `<div class="history-item" onclick="document.getElementById('output').textContent='${h.replace(/'/g, "\\'")}';">${h}</div>`
+    ).join('');
+}
+
+renderHistory();
+</script>
+
+</body>
+</html>
