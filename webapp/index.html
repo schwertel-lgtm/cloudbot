@@ -175,6 +175,12 @@
             transform: scale(0.98);
             opacity: 0.9;
         }
+
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
     </style>
 </head>
 <body>
@@ -250,21 +256,55 @@
 
 <!-- SCAN -->
 <div class="panel" id="panel-scan">
-    <div class="form-group">
-        <label>Ziel</label>
-        <input type="text" id="scanTarget" placeholder="Domain, IP oder Netzwerk eingeben">
-    </div>
-
-    <h2>Profil</h2>
+    <h2>Scan-Profil</h2>
     <div class="profile-row">
         <button class="profile-btn" onclick="selectProfile(this, 'schnell')">Schnell</button>
         <button class="profile-btn active" onclick="selectProfile(this, 'normal')">Normal</button>
         <button class="profile-btn" onclick="selectProfile(this, 'intensiv')">Intensiv</button>
     </div>
 
+    <h2>Ziel</h2>
+    <div class="form-row">
+        <div class="form-group">
+            <label>Domain / URL</label>
+            <input type="text" id="scanDomain" placeholder="z.B. hackthissite.org">
+        </div>
+        <div class="form-group">
+            <label>IP-Adresse</label>
+            <input type="text" id="scanIP" placeholder="z.B. 192.168.178.1">
+        </div>
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label>Netzwerk (Subnet)</label>
+            <input type="text" id="scanNetwork" placeholder="z.B. 192.168.178.0/24">
+        </div>
+        <div class="form-group">
+            <label>Ports</label>
+            <input type="text" id="scanPorts" placeholder="z.B. 80,443 oder 1-1000">
+        </div>
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label>Benutzername</label>
+            <input type="text" id="scanUser" placeholder="z.B. admin">
+        </div>
+        <div class="form-group">
+            <label>Passwort</label>
+            <input type="text" id="scanPass" placeholder="optional">
+        </div>
+    </div>
+
+    <h2>Exploit-Modus</h2>
+    <div class="profile-row">
+        <button class="profile-btn active" onclick="selectExploit(this, 'nein')">Nur finden</button>
+        <button class="profile-btn" onclick="selectExploit(this, 'fragen')">Nachfragen</button>
+        <button class="profile-btn" onclick="selectExploit(this, 'ja')">Ausfuehren</button>
+    </div>
+
     <div class="form-group">
-        <label>Anweisungen (optional)</label>
-        <input type="text" id="scanExtra" placeholder="z.B. Fokus auf Web, nur Port 443...">
+        <label>Zusaetzliche Anweisungen</label>
+        <input type="text" id="scanExtra" placeholder="z.B. Fokus auf Web-Schwachstellen">
     </div>
 
     <button class="scan-btn" onclick="sendScan()">Scan starten</button>
@@ -282,11 +322,6 @@
 
 <!-- OSINT -->
 <div class="panel" id="panel-osint">
-    <div class="form-group">
-        <label>Ziel</label>
-        <input type="text" id="osintTarget" placeholder="Name, E-Mail, Domain oder Username">
-    </div>
-
     <h2>Suchtiefe</h2>
     <div class="profile-row">
         <button class="profile-btn" onclick="selectOsintDepth(this, 'basis')">Basis</button>
@@ -294,9 +329,73 @@
         <button class="profile-btn" onclick="selectOsintDepth(this, 'tief')">Tief</button>
     </div>
 
+    <h2>Person</h2>
+    <div class="form-row">
+        <div class="form-group">
+            <label>Vorname</label>
+            <input type="text" id="osintFirstName" placeholder="z.B. Max">
+        </div>
+        <div class="form-group">
+            <label>Nachname</label>
+            <input type="text" id="osintLastName" placeholder="z.B. Mustermann">
+        </div>
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label>E-Mail</label>
+            <input type="text" id="osintEmail" placeholder="z.B. max@example.com">
+        </div>
+        <div class="form-group">
+            <label>Telefon</label>
+            <input type="text" id="osintPhone" placeholder="z.B. +49 170 1234567">
+        </div>
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label>Firma</label>
+            <input type="text" id="osintCompany" placeholder="z.B. Firma GmbH">
+        </div>
+        <div class="form-group">
+            <label>Position</label>
+            <input type="text" id="osintRole" placeholder="z.B. Geschaeftsfuehrer">
+        </div>
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label>Stadt</label>
+            <input type="text" id="osintCity" placeholder="z.B. Berlin">
+        </div>
+        <div class="form-group">
+            <label>Land</label>
+            <input type="text" id="osintCountry" placeholder="z.B. Deutschland">
+        </div>
+    </div>
+    <div class="form-row">
+        <div class="form-group">
+            <label>Social Media</label>
+            <input type="text" id="osintSocial" placeholder="z.B. @maxmuster">
+        </div>
+        <div class="form-group">
+            <label>Webseite</label>
+            <input type="text" id="osintWebsite" placeholder="z.B. www.example.de">
+        </div>
+    </div>
+
+    <h2>E-Mail Recherche</h2>
+    <div class="form-row">
+        <div class="form-group">
+            <label>E-Mail Adresse</label>
+            <input type="text" id="osintEmailAddr" placeholder="z.B. info@example.com">
+        </div>
+        <div class="form-group">
+            <label>Domain</label>
+            <input type="text" id="osintDomain" placeholder="z.B. example.com">
+        </div>
+    </div>
+
     <div class="form-group">
-        <label>Details (optional)</label>
-        <input type="text" id="osintExtra" placeholder="z.B. Firma, Stadt, bekannte Accounts">
+        <label>Zusaetzliche Infos</label>
+        <input type="text" id="osintExtra" placeholder="z.B. bekannte Accounts, Hobbies...">
     </div>
 
     <button class="scan-btn" onclick="sendOsint()">OSINT starten</button>
@@ -310,6 +409,7 @@ tg.ready();
 tg.expand();
 
 let scanProfile = 'normal';
+let exploitMode = 'nein';
 let osintDepth = 'standard';
 
 function switchTab(name) {
@@ -345,42 +445,106 @@ function selectProfile(el, profile) {
     el.classList.add('active');
 }
 
+function selectExploit(el, mode) {
+    exploitMode = mode;
+    el.parentElement.querySelectorAll('.profile-btn').forEach(b => b.classList.remove('active'));
+    el.classList.add('active');
+}
+
 function selectOsintDepth(el, depth) {
     osintDepth = depth;
     el.parentElement.querySelectorAll('.profile-btn').forEach(b => b.classList.remove('active'));
     el.classList.add('active');
 }
 
+function val(id) { return document.getElementById(id).value.trim(); }
+
 function quickScan(text) {
     send(`Profil: ${scanProfile}\n\n${text}\n\nSpeichere alle Ergebnisse in /root/data/scans/`);
 }
 
 function sendScan() {
-    const target = document.getElementById('scanTarget').value.trim();
-    if (!target) { alert('Bitte Ziel eingeben'); return; }
+    const domain = val('scanDomain');
+    const ip = val('scanIP');
+    const network = val('scanNetwork');
 
-    let msg = `Profil: ${scanProfile}\n\nAnalysiere: ${target}`;
-    msg += '\n\nWaehle automatisch die passenden Tools fuer dieses Ziel.';
+    if (!domain && !ip && !network) { alert('Bitte mindestens ein Ziel eingeben'); return; }
 
-    const extra = document.getElementById('scanExtra').value.trim();
+    let msg = `Profil: ${scanProfile}\n\n`;
+
+    const targets = [domain, ip, network].filter(Boolean);
+    msg += `Analysiere: ${targets.join(', ')}`;
+
+    const ports = val('scanPorts');
+    if (ports) msg += `\nPorts: ${ports}`;
+    const user = val('scanUser');
+    if (user) msg += `\nBenutzername: ${user}`;
+    const pass = val('scanPass');
+    if (pass) msg += `\nPasswort: ${pass}`;
+
+    if (exploitMode === 'ja') {
+        msg += '\n\nExploits ausfuehren: Gefundene Schwachstellen aktiv ausnutzen und dokumentieren.';
+    } else if (exploitMode === 'fragen') {
+        msg += '\n\nBei gefundenen Schwachstellen: Frage mich vor der Ausfuehrung ob Exploits angewendet werden sollen.';
+    } else {
+        msg += '\n\nNur identifizieren, keine Exploits ausfuehren.';
+    }
+
+    const extra = val('scanExtra');
     if (extra) msg += '\n\n' + extra;
 
-    msg += '\n\nSpeichere alle Ergebnisse in /root/data/scans/';
+    msg += '\n\nWaehle automatisch die passenden Tools.';
+    msg += '\nSpeichere alle Ergebnisse in /root/data/scans/';
     send(msg);
 }
 
 function sendOsint() {
-    const target = document.getElementById('osintTarget').value.trim();
-    if (!target) { alert('Bitte Ziel eingeben'); return; }
+    const fName = val('osintFirstName');
+    const lName = val('osintLastName');
+    const email = val('osintEmail');
+    const phone = val('osintPhone');
+    const company = val('osintCompany');
+    const role = val('osintRole');
+    const city = val('osintCity');
+    const country = val('osintCountry');
+    const social = val('osintSocial');
+    const website = val('osintWebsite');
+    const emailAddr = val('osintEmailAddr');
+    const domain = val('osintDomain');
+    const extra = val('osintExtra');
 
-    let msg = `OSINT-Recherche (Suchtiefe: ${osintDepth}):\n\n${target}`;
+    const hasPerson = fName || lName || email || phone || company || social;
+    const hasEmail = emailAddr;
 
-    const extra = document.getElementById('osintExtra').value.trim();
-    if (extra) msg += '\n\nZusaetzliche Infos: ' + extra;
+    if (!hasPerson && !hasEmail) { alert('Bitte mindestens ein Feld ausfuellen'); return; }
+
+    let msg = `OSINT-Recherche (Suchtiefe: ${osintDepth})\n`;
+
+    if (hasPerson) {
+        const fullName = (fName + ' ' + lName).trim();
+        if (fullName) msg += `\nPerson: ${fullName}`;
+        msg += '\n\nBekannte Informationen:';
+        if (email) msg += `\n- E-Mail: ${email}`;
+        if (phone) msg += `\n- Telefon: ${phone}`;
+        if (company) msg += `\n- Firma: ${company}`;
+        if (role) msg += `\n- Position: ${role}`;
+        if (city || country) msg += `\n- Ort: ${[city, country].filter(Boolean).join(', ')}`;
+        if (social) msg += `\n- Social Media: ${social}`;
+        if (website) msg += `\n- Webseite: ${website}`;
+    }
+
+    if (hasEmail) {
+        msg += `\n\nE-Mail-Recherche: ${emailAddr}`;
+        if (domain) msg += `\nDomain: ${domain}`;
+        msg += '\nPruefe: Data Breaches, Paste Sites, Social Media, Domain-Verknuepfungen';
+    }
+
+    if (extra) msg += `\n\nZusaetzliche Infos: ${extra}`;
 
     if (osintDepth === 'tief') {
         msg += '\n\nPruefe auch: Data Breaches, Paste Sites, Darknet-Mentions, Leak-Datenbanken';
     }
+
     msg += '\n\nWaehle automatisch die passenden Tools.';
     msg += '\nSpeichere alle Ergebnisse in /root/data/scans/';
     send(msg);
