@@ -1,7 +1,13 @@
 import os
+import io
+import tarfile
+import logging
 import docker
 from telegram import Update, WebAppInfo, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+logger = logging.getLogger(__name__)
 
 from security import (
     ALLOWED_CHAT_ID,
@@ -215,6 +221,82 @@ async def cmd_ip(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 @authorized
+async def cmd_download(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Nutzung: /download <pfad>\nz.B. /download /root/data/scans/social_engineering/payload_reverse_tcp.exe")
+        return
+    filepath = " ".join(context.args)
+    container_name = "kali"
+
+    # Wenn Pfad mit container: beginnt, anderen Container nutzen
+    if ":" in filepath and not filepath.startswith("/"):
+        parts = filepath.split(":", 1)
+        container_name = parts[0]
+        filepath = parts[1]
+        valid, reason = validate_container_name(container_name)
+        if not valid:
+            await update.message.reply_text(reason)
+            return
+
+    try:
+        container = client.containers.get(container_name)
+        archive, _ = container.get_archive(filepath)
+        # tar-Archiv entpacken
+        tar_data = b"".join(archive)
+        tar_stream = io.BytesIO(tar_data)
+        with tarfile.open(fileobj=tar_stream) as tar:
+            member = tar.getmembers()[0]
+            if member.isfile():
+                f = tar.extractfile(member)
+                file_data = f.read()
+                filename = os.path.basename(filepath)
+                await update.message.reply_document(
+                    document=io.BytesIO(file_data),
+                    filename=filename,
+                    caption=f"Datei von {container_name}:{filepath}"
+                )
+                log_action(update.effective_chat.id, "download", filepath, f"{len(file_data)} bytes", True)
+            else:
+                await update.message.reply_text(f"'{filepath}' ist ein Verzeichnis. Nutze /files um Dateien aufzulisten.")
+    except docker.errors.NotFound:
+        await update.message.reply_text(f"Datei oder Container nicht gefunden: {filepath}")
+        log_action(update.effective_chat.id, "download", filepath, "nicht gefunden", False)
+    except Exception as e:
+        await update.message.reply_text(f"Fehler beim Download: {str(e)[:300]}")
+        log_action(update.effective_chat.id, "download", filepath, str(e)[:200], False)
+
+
+@authorized
+async def cmd_files(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    path = " ".join(context.args) if context.args else "/root/data/scans"
+    try:
+        container = client.containers.get("kali")
+        result = container.exec_run(f"find {path} -maxdepth 2 -type f -printf '%s %p\\n'", demux=True)
+        stdout = result.output[0].decode("utf-8", errors="replace") if result.output[0] else ""
+        if not stdout.strip():
+            await update.message.reply_text(f"Keine Dateien in {path}")
+            return
+        lines = []
+        for line in stdout.strip().split("\n")[:30]:
+            parts = line.split(" ", 1)
+            if len(parts) == 2:
+                size = int(parts[0])
+                name = parts[1]
+                if size > 1024 * 1024:
+                    size_str = f"{size // (1024*1024)} MB"
+                elif size > 1024:
+                    size_str = f"{size // 1024} KB"
+                else:
+                    size_str = f"{size} B"
+                lines.append(f"{size_str} -- {name}")
+        output = "\n".join(lines)
+        await update.message.reply_text(f"Dateien in {path}:\n\n{output[:3500]}\n\nDownload: /download <pfad>")
+        log_action(update.effective_chat.id, "files", path, f"{len(lines)} Dateien", True)
+    except Exception as e:
+        await update.message.reply_text(f"Fehler: {str(e)[:300]}")
+
+
+@authorized
 async def cmd_hilfe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "Cloudbot Befehle\n\n"
@@ -226,6 +308,8 @@ async def cmd_hilfe(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/exec <name> <befehl> -- Befehl ausfuehren\n"
         "/vpn -- VPN-Status anzeigen\n"
         "/ip -- Externe IP anzeigen\n"
+        "/files -- Erstellte Dateien auflisten\n"
+        "/download <pfad> -- Datei herunterladen\n"
         "/audit -- Letzte 20 Aktionen anzeigen\n"
         "/app -- Dashboard oeffnen (Mini App)\n"
         "/hilfe -- Diese Hilfe anzeigen\n\n"
@@ -252,51 +336,60 @@ async def cmd_app(update: Update, context: ContextTypes.DEFAULT_TYPE):
     log_action(update.effective_chat.id, "app", "", "Dashboard geoeffnet", True)
 
 
-@authorized
 async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    data = update.effective_message.web_app_data.data
-    chat_id = update.effective_chat.id
-    log_action(chat_id, "webapp", data[:100], "empfangen", True)
-
-    # Slash-Befehle direkt ausfuehren
-    if data.startswith("/"):
-        parts = data.split(None, 2)
-        cmd = parts[0].lstrip("/")
-        args = parts[1:] if len(parts) > 1 else []
-        context.args = args
-
-        handlers = {
-            "status": cmd_status,
-            "vpn": cmd_vpn,
-            "ip": cmd_ip,
-            "audit": cmd_audit,
-            "hilfe": cmd_hilfe,
-            "logs": cmd_logs,
-            "start": cmd_start,
-            "stop": cmd_stop,
-            "restart": cmd_restart,
-        }
-
-        if cmd == "exec" and len(args) >= 2:
-            context.args = [args[0], " ".join(args[1:])] if len(parts) > 2 else args
-            await cmd_exec(update, context)
-        elif cmd in handlers:
-            await handlers[cmd](update, context)
-        else:
-            await update.message.reply_text(f"Unbekannter Befehl: /{cmd}")
-        return
-
-    # Freitext -> KI
     try:
+        chat_id = update.effective_chat.id
+        if not is_authorized(chat_id):
+            logger.warning("Webapp: Unautorisierter Zugriff von %s", chat_id)
+            return
+
+        data = update.effective_message.web_app_data.data
+        logger.info("Webapp-Daten empfangen: %s", data[:100])
+        log_action(chat_id, "webapp", data[:100], "empfangen", True)
+
+        # Slash-Befehle direkt ausfuehren
+        if data.startswith("/"):
+            parts = data.split(None, 2)
+            cmd = parts[0].lstrip("/")
+            args = parts[1:] if len(parts) > 1 else []
+            context.args = args
+
+            handlers = {
+                "status": cmd_status,
+                "vpn": cmd_vpn,
+                "ip": cmd_ip,
+                "audit": cmd_audit,
+                "hilfe": cmd_hilfe,
+                "logs": cmd_logs,
+                "start": cmd_start,
+                "stop": cmd_stop,
+                "restart": cmd_restart,
+                "files": cmd_files,
+                "download": cmd_download,
+            }
+
+            if cmd == "exec" and len(args) >= 1:
+                context.args = [args[0]] + ([" ".join(parts[2:])] if len(parts) > 2 else [])
+                await cmd_exec(update, context)
+            elif cmd in handlers:
+                await handlers[cmd](update, context)
+            else:
+                await update.effective_message.reply_text(f"Unbekannter Befehl: /{cmd}")
+            return
+
+        # Freitext -> KI
         response = await process_message(data, chat_id)
         if response:
             while response:
                 chunk = response[:4000]
                 response = response[4000:]
-                await update.message.reply_text(chunk)
+                await update.effective_message.reply_text(chunk)
     except Exception as e:
-        await update.message.reply_text(f"Fehler: {str(e)[:500]}")
-        log_action(chat_id, "ai_chat", data[:100], str(e)[:200], False)
+        logger.error("Webapp-Fehler: %s", e, exc_info=True)
+        try:
+            await update.effective_message.reply_text(f"Fehler: {str(e)[:500]}")
+        except Exception:
+            pass
 
 
 @authorized
@@ -328,10 +421,13 @@ def main():
     app.add_handler(CommandHandler("vpn", cmd_vpn))
     app.add_handler(CommandHandler("ip", cmd_ip))
     app.add_handler(CommandHandler("app", cmd_app))
+    app.add_handler(CommandHandler("files", cmd_files))
+    app.add_handler(CommandHandler("download", cmd_download))
     app.add_handler(CommandHandler("hilfe", cmd_hilfe))
     app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_webapp_data))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    print("Cloudbot laeuft... (mit KI + Mini App)")
+    logger.info("Cloudbot laeuft... (mit KI + Mini App)")
+    logger.info("WEBAPP_URL: %s", WEBAPP_URL or "NICHT GESETZT")
     app.run_polling()
 
 
