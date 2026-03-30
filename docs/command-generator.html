@@ -452,6 +452,70 @@
         </div>
 
         <div class="section">
+            <h3>Social Engineering (SET)</h3>
+            <div class="profile-buttons" style="margin-bottom:15px;">
+                <div class="profile-btn set-phishing active" onclick="selectSetMode('phishing')">Phishing<br><span style="font-size:11px;color:#8b949e">Spear-Phishing E-Mail</span></div>
+                <div class="profile-btn set-credential" onclick="selectSetMode('credential')">Credential Harvest<br><span style="font-size:11px;color:#8b949e">Login-Seite klonen</span></div>
+                <div class="profile-btn set-payload" onclick="selectSetMode('payload')">Payload<br><span style="font-size:11px;color:#8b949e">Payload + Listener</span></div>
+                <div class="profile-btn set-qrcode" onclick="selectSetMode('qrcode')">QR-Code<br><span style="font-size:11px;color:#8b949e">QR-Angriff</span></div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Ziel-Domain / URL</label>
+                    <input type="text" id="setTargetUrl" placeholder="z.B. example.com/login">
+                </div>
+                <div class="form-group">
+                    <label>Ziel-E-Mail</label>
+                    <input type="text" id="setTargetEmail" placeholder="z.B. opfer@example.com">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Absender-Name</label>
+                    <input type="text" id="setSenderName" placeholder="z.B. IT-Abteilung">
+                </div>
+                <div class="form-group">
+                    <label>Absender-E-Mail</label>
+                    <input type="text" id="setSenderEmail" placeholder="z.B. admin@firma.de">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Betreff</label>
+                    <input type="text" id="setSubject" placeholder="z.B. Dringende Sicherheitsupdates">
+                </div>
+                <div class="form-group">
+                    <label>Vorwand / Nachricht</label>
+                    <input type="text" id="setPretext" placeholder="z.B. Passwort laeuft ab in 24h">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Webseite klonen (URL)</label>
+                <input type="text" id="setCloneUrl" placeholder="z.B. https://login.example.com">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Payload-Typ</label>
+                    <select id="setPayloadType">
+                        <option value="">- Waehlen -</option>
+                        <option value="reverse_tcp">Reverse TCP Shell</option>
+                        <option value="reverse_https">Reverse HTTPS</option>
+                        <option value="powershell">PowerShell</option>
+                        <option value="hta">HTA Application</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Listener IP</label>
+                    <input type="text" id="setListenerIP" placeholder="z.B. eigene VPN-IP">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Listener Port</label>
+                <input type="text" id="setListenerPort" placeholder="z.B. 4444">
+            </div>
+        </div>
+
+        <div class="section">
             <h3>Exploit-Modus</h3>
             <div class="profile-buttons">
                 <div class="profile-btn exploit-nein active" onclick="selectExploit('nein')">Nur identifizieren<br><span style="font-size:11px;color:#8b949e">Schwachstellen finden, nicht ausnutzen</span></div>
@@ -493,6 +557,7 @@
 let selectedProfile = '';
 let selectedMode = 'auto';
 let selectedExploit = 'nein';
+let selectedSetMode = 'phishing';
 let history = JSON.parse(localStorage.getItem('cmdHistory') || '[]');
 
 function toggleCategory(header) {
@@ -524,6 +589,12 @@ function selectExploit(mode) {
     selectedExploit = mode;
     document.querySelectorAll('.profile-btn.exploit-nein, .profile-btn.exploit-fragen, .profile-btn.exploit-ja').forEach(b => b.classList.remove('active'));
     document.querySelector(`.profile-btn.exploit-${mode}`).classList.add('active');
+}
+
+function selectSetMode(mode) {
+    selectedSetMode = mode;
+    document.querySelectorAll('.profile-btn.set-phishing, .profile-btn.set-credential, .profile-btn.set-payload, .profile-btn.set-qrcode').forEach(b => b.classList.remove('active'));
+    document.querySelector(`.profile-btn.set-${mode}`).classList.add('active');
 }
 
 function autoSelectTools() {
@@ -730,6 +801,53 @@ function generateCommand() {
     if (hasForensic) {
         if (hasTarget || hasPerson || hasEmail) command += '\n';
         command += `Forensische Analyse der Datei: ${forensicFile}\n`;
+    }
+
+    // Social Engineering (SET)
+    const setUrl = document.getElementById('setTargetUrl').value;
+    const setEmail = document.getElementById('setTargetEmail').value;
+    const hasSET = setUrl || setEmail || document.getElementById('setCloneUrl').value || document.getElementById('setPayloadType').value;
+
+    if (hasSET) {
+        const modeLabels = { phishing: 'Spear-Phishing Angriff', credential: 'Credential Harvesting', payload: 'Payload erstellen', qrcode: 'QR-Code Angriff' };
+        command += `\nSocial Engineering: ${modeLabels[selectedSetMode]}\nNutze das Social Engineer Toolkit (SET) im Kali-Container.\n`;
+
+        if (setUrl) command += `\nZiel-URL: ${setUrl}`;
+        if (setEmail) command += `\nZiel-E-Mail: ${setEmail}`;
+
+        if (selectedSetMode === 'phishing') {
+            const sn = document.getElementById('setSenderName').value;
+            const se = document.getElementById('setSenderEmail').value;
+            const subj = document.getElementById('setSubject').value;
+            const pre = document.getElementById('setPretext').value;
+            if (sn) command += `\nAbsender-Name: ${sn}`;
+            if (se) command += `\nAbsender-E-Mail: ${se}`;
+            if (subj) command += `\nBetreff: ${subj}`;
+            if (pre) command += `\nVorwand: ${pre}`;
+            command += '\n\nErstelle eine ueberzeugende Phishing-E-Mail mit SET (Spear-Phishing Attack Vector).';
+        }
+
+        if (selectedSetMode === 'credential') {
+            const clone = document.getElementById('setCloneUrl').value;
+            if (clone) command += `\nWebseite klonen: ${clone}`;
+            command += '\n\nSetze einen Credential Harvester auf mit SET (Website Attack Vectors > Credential Harvester / Site Cloner).';
+        }
+
+        if (selectedSetMode === 'payload') {
+            const pt = document.getElementById('setPayloadType').value;
+            const lip = document.getElementById('setListenerIP').value;
+            const lp = document.getElementById('setListenerPort').value;
+            if (pt) command += `\nPayload-Typ: ${pt}`;
+            if (lip) command += `\nListener IP: ${lip}`;
+            if (lp) command += `\nListener Port: ${lp}`;
+            command += '\n\nErstelle einen Payload mit SET (Infectious Media Generator / Create a Payload and Listener).';
+        }
+
+        if (selectedSetMode === 'qrcode') {
+            command += '\n\nErstelle einen QR-Code mit SET (QRCode Generator Attack Vector).';
+        }
+
+        command += '\nDokumentiere alle Schritte und Ergebnisse.\n';
     }
 
     if (tools.length > 0) {

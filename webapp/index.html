@@ -189,6 +189,7 @@
     <button class="tab active" onclick="switchTab('commands')">Befehle</button>
     <button class="tab" onclick="switchTab('scan')">Scan</button>
     <button class="tab" onclick="switchTab('osint')">OSINT</button>
+    <button class="tab" onclick="switchTab('set')">SE</button>
 </div>
 
 <!-- BEFEHLE -->
@@ -401,6 +402,87 @@
     <button class="scan-btn" onclick="sendOsint()">OSINT starten</button>
 </div>
 
+<!-- SOCIAL ENGINEERING -->
+<div class="panel" id="panel-set">
+    <h2>Angriffsvektor</h2>
+    <div class="profile-row">
+        <button class="profile-btn active" onclick="selectSetMode(this, 'phishing')">Phishing</button>
+        <button class="profile-btn" onclick="selectSetMode(this, 'credential')">Credential Harvest</button>
+    </div>
+    <div class="profile-row">
+        <button class="profile-btn" onclick="selectSetMode(this, 'payload')">Payload</button>
+        <button class="profile-btn" onclick="selectSetMode(this, 'qrcode')">QR-Code</button>
+    </div>
+
+    <h2>Ziel</h2>
+    <div class="form-row">
+        <div class="form-group">
+            <label>Ziel-Domain / URL</label>
+            <input type="text" id="setTargetUrl" placeholder="z.B. example.com/login">
+        </div>
+        <div class="form-group">
+            <label>Ziel-E-Mail</label>
+            <input type="text" id="setTargetEmail" placeholder="z.B. opfer@example.com">
+        </div>
+    </div>
+
+    <h2>Phishing-Details</h2>
+    <div class="form-row">
+        <div class="form-group">
+            <label>Absender-Name</label>
+            <input type="text" id="setSenderName" placeholder="z.B. IT-Abteilung">
+        </div>
+        <div class="form-group">
+            <label>Absender-E-Mail</label>
+            <input type="text" id="setSenderEmail" placeholder="z.B. admin@firma.de">
+        </div>
+    </div>
+    <div class="form-group">
+        <label>Betreff</label>
+        <input type="text" id="setSubject" placeholder="z.B. Dringende Sicherheitsupdates">
+    </div>
+    <div class="form-group">
+        <label>Nachrichtentext / Vorwand</label>
+        <input type="text" id="setPretext" placeholder="z.B. Passwort muss in 24h geaendert werden">
+    </div>
+
+    <h2>Credential Harvesting</h2>
+    <div class="form-group">
+        <label>Webseite klonen (URL)</label>
+        <input type="text" id="setCloneUrl" placeholder="z.B. https://login.example.com">
+    </div>
+
+    <h2>Payload</h2>
+    <div class="form-row">
+        <div class="form-group">
+            <label>Payload-Typ</label>
+            <select id="setPayloadType">
+                <option value="">- Waehlen -</option>
+                <option value="reverse_tcp">Reverse TCP Shell</option>
+                <option value="reverse_https">Reverse HTTPS</option>
+                <option value="powershell">PowerShell</option>
+                <option value="hta">HTA Application</option>
+            </select>
+        </div>
+        <div class="form-group">
+            <label>Listener IP</label>
+            <input type="text" id="setListenerIP" placeholder="z.B. eigene VPN-IP">
+        </div>
+    </div>
+    <div class="form-group">
+        <label>Listener Port</label>
+        <input type="text" id="setListenerPort" placeholder="z.B. 4444">
+    </div>
+
+    <h2>Zusaetzlich</h2>
+    <div class="form-group">
+        <label>Anweisungen</label>
+        <input type="text" id="setExtra" placeholder="z.B. Erstelle ueberzeugenden Vorwand">
+    </div>
+
+    <button class="scan-btn" onclick="sendSet()">SE-Angriff vorbereiten</button>
+</div>
+
 <div class="sent-toast" id="toast">Gesendet!</div>
 
 <script>
@@ -411,6 +493,7 @@ tg.expand();
 let scanProfile = 'normal';
 let exploitMode = 'nein';
 let osintDepth = 'standard';
+let setMode = 'phishing';
 
 function switchTab(name) {
     document.querySelectorAll('.tab').forEach((t, i) => {
@@ -454,6 +537,12 @@ function selectExploit(el, mode) {
 function selectOsintDepth(el, depth) {
     osintDepth = depth;
     el.parentElement.querySelectorAll('.profile-btn').forEach(b => b.classList.remove('active'));
+    el.classList.add('active');
+}
+
+function selectSetMode(el, mode) {
+    setMode = mode;
+    document.querySelectorAll('#panel-set .profile-btn').forEach(b => b.classList.remove('active'));
     el.classList.add('active');
 }
 
@@ -547,6 +636,84 @@ function sendOsint() {
 
     msg += '\n\nWaehle automatisch die passenden Tools.';
     msg += '\nSpeichere alle Ergebnisse in /root/data/scans/';
+    send(msg);
+}
+
+function sendSet() {
+    const modeLabels = {
+        phishing: 'Spear-Phishing Angriff',
+        credential: 'Credential Harvesting',
+        payload: 'Payload erstellen',
+        qrcode: 'QR-Code Angriff'
+    };
+
+    let msg = `Social Engineering: ${modeLabels[setMode]}\n`;
+    msg += `Nutze das Social Engineer Toolkit (SET) im Kali-Container.\n`;
+
+    const targetUrl = val('setTargetUrl');
+    const targetEmail = val('setTargetEmail');
+
+    if (!targetUrl && !targetEmail && setMode !== 'payload') {
+        alert('Bitte mindestens ein Ziel eingeben');
+        return;
+    }
+
+    // Ziel
+    if (targetUrl) msg += `\nZiel-URL: ${targetUrl}`;
+    if (targetEmail) msg += `\nZiel-E-Mail: ${targetEmail}`;
+
+    // Phishing
+    if (setMode === 'phishing') {
+        const senderName = val('setSenderName');
+        const senderEmail = val('setSenderEmail');
+        const subject = val('setSubject');
+        const pretext = val('setPretext');
+        if (senderName) msg += `\nAbsender-Name: ${senderName}`;
+        if (senderEmail) msg += `\nAbsender-E-Mail: ${senderEmail}`;
+        if (subject) msg += `\nBetreff: ${subject}`;
+        if (pretext) msg += `\nVorwand/Nachricht: ${pretext}`;
+        msg += '\n\nErstelle eine ueberzeugende Phishing-E-Mail mit SET.';
+        msg += '\nNutze Spear-Phishing Attack Vector (Option 1 in SET).';
+    }
+
+    // Credential Harvesting
+    if (setMode === 'credential') {
+        const cloneUrl = val('setCloneUrl');
+        if (cloneUrl) msg += `\nWebseite klonen: ${cloneUrl}`;
+        msg += '\n\nSetze einen Credential Harvester auf mit SET.';
+        msg += '\nNutze Website Attack Vectors > Credential Harvester (Site Cloner).';
+        if (cloneUrl) msg += `\nKlone die Login-Seite von ${cloneUrl} und fange Credentials ab.`;
+    }
+
+    // Payload
+    if (setMode === 'payload') {
+        const payloadType = val('setPayloadType');
+        const listenerIP = val('setListenerIP');
+        const listenerPort = val('setListenerPort');
+        if (payloadType) msg += `\nPayload-Typ: ${payloadType}`;
+        if (listenerIP) msg += `\nListener IP: ${listenerIP}`;
+        if (listenerPort) msg += `\nListener Port: ${listenerPort}`;
+        msg += '\n\nErstelle einen Payload mit SET.';
+        if (payloadType === 'powershell') {
+            msg += '\nNutze PowerShell Attack Vectors in SET.';
+        } else {
+            msg += '\nNutze Infectious Media Generator oder Create a Payload and Listener.';
+        }
+    }
+
+    // QR-Code
+    if (setMode === 'qrcode') {
+        msg += '\n\nErstelle einen QR-Code mit SET der auf eine praeparierte Seite verweist.';
+        msg += '\nNutze QRCode Generator Attack Vector in SET.';
+        if (targetUrl) msg += `\nDer QR-Code soll auf ${targetUrl} verweisen.`;
+    }
+
+    const extra = val('setExtra');
+    if (extra) msg += `\n\n${extra}`;
+
+    msg += '\n\nDokumentiere alle Schritte und Ergebnisse.';
+    msg += '\nSpeichere alle Ergebnisse in /root/data/scans/';
+
     send(msg);
 }
 </script>
