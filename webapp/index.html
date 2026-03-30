@@ -250,7 +250,7 @@
 
 <!-- SCAN -->
 <div class="panel" id="panel-scan">
-    <h2>Scan-Profil</h2>
+    <h2>Profil</h2>
     <div class="profile-row">
         <button class="profile-btn" onclick="selectProfile(this, 'schnell')">Schnell</button>
         <button class="profile-btn active" onclick="selectProfile(this, 'normal')">Normal</button>
@@ -258,62 +258,33 @@
     </div>
 
     <div class="form-group">
-        <label>Ziel (Domain / IP)</label>
-        <input type="text" id="scanTarget" placeholder="z.B. hackthissite.org oder 192.168.178.0/24">
-    </div>
-
-    <div class="form-group">
-        <label>Ports (optional)</label>
-        <input type="text" id="scanPorts" placeholder="z.B. 80,443 oder 1-1000">
-    </div>
-
-    <div class="form-group">
-        <label>Exploit-Modus</label>
-        <div class="profile-row">
-            <button class="profile-btn active" onclick="selectExploit(this, 'nein')">Nur finden</button>
-            <button class="profile-btn" onclick="selectExploit(this, 'fragen')">Nachfragen</button>
-            <button class="profile-btn" onclick="selectExploit(this, 'ja')">Ausfuehren</button>
-        </div>
-    </div>
-
-    <div class="form-group">
-        <label>Zusaetzliche Anweisungen</label>
-        <textarea id="scanExtra" rows="2" placeholder="z.B. Fokus auf Web-Schwachstellen"></textarea>
+        <textarea id="scanInput" rows="4" placeholder="Schreib einfach was du willst, z.B.:&#10;&#10;Scanne hackthissite.org nach Schwachstellen&#10;Netzwerk-Scan 192.168.178.0/24&#10;Pruefe example.com auf offene Ports&#10;Finde SQL-Injection auf example.com/login"></textarea>
     </div>
 
     <button class="scan-btn" onclick="sendScan()">Scan starten</button>
+
+    <h2 style="margin-top:16px;">Schnellstart</h2>
+    <div class="cmd-grid">
+        <button class="cmd-btn" onclick="quickScan('Scanne mein lokales Netzwerk 192.168.178.0/24')">
+            <span class="icon">&#128225;</span> LAN-Scan
+        </button>
+        <button class="cmd-btn" onclick="quickScan('Zeige alle offenen Ports und Dienste auf 192.168.178.28')">
+            <span class="icon">&#128271;</span> NAS pruefen
+        </button>
+    </div>
 </div>
 
 <!-- OSINT -->
 <div class="panel" id="panel-osint">
-    <h2>Ziel</h2>
-    <div class="form-group">
-        <label>Typ</label>
-        <select id="osintType">
-            <option value="person">Person</option>
-            <option value="email">E-Mail Adresse</option>
-            <option value="domain">Domain / Firma</option>
-            <option value="username">Username</option>
-        </select>
+    <h2>Suchtiefe</h2>
+    <div class="profile-row">
+        <button class="profile-btn" onclick="selectOsintDepth(this, 'basis')">Basis</button>
+        <button class="profile-btn active" onclick="selectOsintDepth(this, 'standard')">Standard</button>
+        <button class="profile-btn" onclick="selectOsintDepth(this, 'tief')">Tief</button>
     </div>
 
     <div class="form-group">
-        <label>Name / E-Mail / Domain</label>
-        <input type="text" id="osintTarget" placeholder="z.B. Max Mustermann">
-    </div>
-
-    <div class="form-group">
-        <label>Zusaetzliche Infos</label>
-        <textarea id="osintExtra" rows="2" placeholder="z.B. Firma, Stadt, bekannte Accounts..."></textarea>
-    </div>
-
-    <div class="form-group">
-        <label>Suchtiefe</label>
-        <div class="profile-row">
-            <button class="profile-btn" onclick="selectOsintDepth(this, 'basis')">Basis</button>
-            <button class="profile-btn active" onclick="selectOsintDepth(this, 'standard')">Standard</button>
-            <button class="profile-btn" onclick="selectOsintDepth(this, 'tief')">Tief</button>
-        </div>
+        <textarea id="osintInput" rows="4" placeholder="Schreib einfach was du suchst, z.B.:&#10;&#10;Finde alles ueber max.mustermann@gmail.com&#10;OSINT zu Firma XY GmbH, Berlin&#10;Recherchiere Username @johndoe&#10;Domain example.com - wem gehoert sie?"></textarea>
     </div>
 
     <button class="scan-btn" onclick="sendOsint()">OSINT starten</button>
@@ -327,7 +298,6 @@ tg.ready();
 tg.expand();
 
 let scanProfile = 'normal';
-let exploitMode = 'nein';
 let osintDepth = 'standard';
 
 function switchTab(name) {
@@ -347,7 +317,7 @@ function showToast(text) {
 
 function send(command) {
     tg.sendData(command);
-    showToast(command);
+    showToast('Gesendet!');
 }
 
 function execCustom() {
@@ -363,62 +333,31 @@ function selectProfile(el, profile) {
     el.classList.add('active');
 }
 
-function selectExploit(el, mode) {
-    exploitMode = mode;
-    el.parentElement.querySelectorAll('.profile-btn').forEach(b => b.classList.remove('active'));
-    el.classList.add('active');
-}
-
 function selectOsintDepth(el, depth) {
     osintDepth = depth;
     el.parentElement.querySelectorAll('.profile-btn').forEach(b => b.classList.remove('active'));
     el.classList.add('active');
 }
 
+function quickScan(text) {
+    send(`Profil: ${scanProfile}\n\n${text}\n\nSpeichere alle Ergebnisse in /root/data/scans/`);
+}
+
 function sendScan() {
-    const target = document.getElementById('scanTarget').value.trim();
-    if (!target) { alert('Bitte Ziel eingeben'); return; }
-
-    let msg = `Profil: ${scanProfile}\n\nAnalysiere: ${target}`;
-
-    const ports = document.getElementById('scanPorts').value.trim();
-    if (ports) msg += `\nPorts: ${ports}`;
-
-    if (exploitMode === 'ja') {
-        msg += '\n\nExploits ausfuehren: Gefundene Schwachstellen aktiv ausnutzen und dokumentieren.';
-    } else if (exploitMode === 'fragen') {
-        msg += '\n\nBei gefundenen Schwachstellen: Frage mich vor der Ausfuehrung ob Exploits angewendet werden sollen.';
-    } else {
-        msg += '\n\nNur identifizieren, keine Exploits ausfuehren.';
-    }
-
-    const extra = document.getElementById('scanExtra').value.trim();
-    if (extra) msg += '\n\n' + extra;
-
-    msg += '\n\nSpeichere alle Ergebnisse in /root/data/scans/';
-
-    send(msg);
+    const input = document.getElementById('scanInput').value.trim();
+    if (!input) { alert('Bitte beschreiben was du scannen willst'); return; }
+    send(`Profil: ${scanProfile}\n\n${input}\n\nSpeichere alle Ergebnisse in /root/data/scans/`);
 }
 
 function sendOsint() {
-    const target = document.getElementById('osintTarget').value.trim();
-    if (!target) { alert('Bitte Ziel eingeben'); return; }
+    const input = document.getElementById('osintInput').value.trim();
+    if (!input) { alert('Bitte beschreiben was du suchst'); return; }
 
-    const type = document.getElementById('osintType').value;
-    const labels = { person: 'Person', email: 'E-Mail', domain: 'Domain/Firma', username: 'Username' };
-
-    let msg = `OSINT-Recherche (${labels[type]}): ${target}`;
-    msg += `\nSuchtiefe: ${osintDepth}`;
-
-    const extra = document.getElementById('osintExtra').value.trim();
-    if (extra) msg += `\n\nZusaetzliche Infos: ${extra}`;
-
+    let msg = `OSINT-Recherche (Suchtiefe: ${osintDepth}):\n\n${input}`;
     if (osintDepth === 'tief') {
-        msg += '\nPruefe auch: Data Breaches, Paste Sites, Darknet-Mentions, Leak-Datenbanken';
+        msg += '\n\nPruefe auch: Data Breaches, Paste Sites, Darknet-Mentions, Leak-Datenbanken';
     }
-
     msg += '\n\nSpeichere alle Ergebnisse in /root/data/scans/';
-
     send(msg);
 }
 </script>
