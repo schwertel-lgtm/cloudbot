@@ -78,6 +78,10 @@
         .selected-tools { margin-top: 10px; }
         .selected-tools h3 { font-size: 12px; color: #8b949e; margin-bottom: 8px; }
         .tag { display: inline-block; padding: 3px 8px; background: #1a3a2a; border: 1px solid #3fb950; border-radius: 4px; font-size: 11px; color: #3fb950; margin: 2px; }
+
+        .bot-cmd-btn { padding: 10px; background: #21262d; border: 1px solid #30363d; border-radius: 6px; color: #c9d1d9; cursor: pointer; font-size: 13px; font-family: 'Consolas', monospace; transition: all 0.2s; }
+        .bot-cmd-btn:hover { border-color: #58a6ff; color: #58a6ff; background: #1c2128; }
+        .bot-cmd-btn.copied { border-color: #3fb950; color: #3fb950; background: #1a3a2a; }
     </style>
 </head>
 <body>
@@ -426,6 +430,24 @@
             <div class="form-group">
                 <label>Dateipfad</label>
                 <input type="text" id="forensicFile" placeholder="z.B. /root/data/evidence/image.jpg">
+            </div>
+        </div>
+
+        <div class="section">
+            <h3>Bot-Befehle (Telegram)</h3>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                <button class="bot-cmd-btn" onclick="setBotCmd('/status')">/status</button>
+                <button class="bot-cmd-btn" onclick="setBotCmd('/vpn')">/vpn</button>
+                <button class="bot-cmd-btn" onclick="setBotCmd('/ip')">/ip</button>
+                <button class="bot-cmd-btn" onclick="setBotCmd('/audit')">/audit</button>
+                <button class="bot-cmd-btn" onclick="setBotCmd('/logs kali')">/logs kali</button>
+                <button class="bot-cmd-btn" onclick="setBotCmd('/logs cloudbot')">/logs cloudbot</button>
+                <button class="bot-cmd-btn" onclick="setBotCmd('/logs nordvpn')">/logs nordvpn</button>
+                <button class="bot-cmd-btn" onclick="setBotCmd('/restart kali')">/restart kali</button>
+                <button class="bot-cmd-btn" onclick="setBotCmd('/start kali')">/start kali</button>
+                <button class="bot-cmd-btn" onclick="setBotCmd('/stop kali')">/stop kali</button>
+                <button class="bot-cmd-btn" onclick="setBotCmd('/hilfe')">/hilfe</button>
+                <button class="bot-cmd-btn" onclick="setBotCmd('/exec kali ' + prompt('Befehl:'))">/exec kali ...</button>
             </div>
         </div>
 
@@ -857,6 +879,19 @@ function renderHistory() {
 }
 
 renderHistory();
+
+function setBotCmd(cmd) {
+    if (!cmd || cmd.endsWith('null')) return;
+    document.getElementById('output').textContent = cmd;
+    navigator.clipboard.writeText(cmd).then(() => {
+        event.target.classList.add('copied');
+        event.target.textContent = 'Kopiert!';
+        setTimeout(() => {
+            event.target.classList.remove('copied');
+            event.target.textContent = cmd;
+        }, 1500);
+    });
+}
 </script>
 
 </body>

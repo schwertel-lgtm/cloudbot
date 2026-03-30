@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Cloudbot</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            font-family: -apple-system, 'Segoe UI', Roboto, sans-serif;
+            background: var(--tg-theme-bg-color, #0d1117);
+            color: var(--tg-theme-text-color, #c9d1d9);
+            padding: 12px;
+            min-height: 100vh;
+        }
+
+        .tabs {
+            display: flex;
+            gap: 4px;
+            margin-bottom: 12px;
+            background: var(--tg-theme-secondary-bg-color, #161b22);
+            border-radius: 10px;
+            padding: 4px;
+        }
+        .tab {
+            flex: 1;
+            padding: 10px;
+            text-align: center;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            border: none;
+            background: transparent;
+            color: var(--tg-theme-hint-color, #8b949e);
+            transition: all 0.2s;
+        }
+        .tab.active {
+            background: var(--tg-theme-button-color, #58a6ff);
+            color: var(--tg-theme-button-text-color, #fff);
+        }
+
+        .panel { display: none; }
+        .panel.active { display: block; }
+
+        h2 {
+            font-size: 13px;
+            color: var(--tg-theme-hint-color, #8b949e);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin: 16px 0 8px;
+        }
+
+        .cmd-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+        }
+
+        .cmd-btn {
+            padding: 14px 10px;
+            border-radius: 10px;
+            border: 1px solid var(--tg-theme-secondary-bg-color, #30363d);
+            background: var(--tg-theme-secondary-bg-color, #161b22);
+            color: var(--tg-theme-text-color, #c9d1d9);
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.15s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            -webkit-tap-highlight-color: transparent;
+        }
+        .cmd-btn:active {
+            transform: scale(0.95);
+            background: var(--tg-theme-button-color, #58a6ff);
+            color: var(--tg-theme-button-text-color, #fff);
+        }
+        .cmd-btn .icon { font-size: 22px; }
+        .cmd-btn .label { font-size: 12px; color: var(--tg-theme-hint-color, #8b949e); }
+        .cmd-btn:active .label { color: var(--tg-theme-button-text-color, #fff); }
+
+        .cmd-btn.wide {
+            grid-column: 1 / -1;
+        }
+
+        .cmd-btn.danger {
+            border-color: #f8514922;
+        }
+        .cmd-btn.danger:active {
+            background: #da3633;
+        }
+
+        .sent-toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: var(--tg-theme-button-color, #238636);
+            color: var(--tg-theme-button-text-color, #fff);
+            padding: 12px 24px;
+            border-radius: 10px;
+            font-size: 14px;
+            font-weight: 600;
+            transition: transform 0.3s ease;
+            z-index: 100;
+        }
+        .sent-toast.show {
+            transform: translateX(-50%) translateY(0);
+        }
+
+        /* Scan Panel */
+        .form-group { margin-bottom: 12px; }
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            color: var(--tg-theme-hint-color, #8b949e);
+            margin-bottom: 5px;
+        }
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 10px 12px;
+            background: var(--tg-theme-secondary-bg-color, #161b22);
+            border: 1px solid var(--tg-theme-secondary-bg-color, #30363d);
+            border-radius: 8px;
+            color: var(--tg-theme-text-color, #c9d1d9);
+            font-size: 15px;
+            font-family: inherit;
+            -webkit-appearance: none;
+        }
+        .form-group input:focus, .form-group select:focus, .form-group textarea:focus {
+            outline: none;
+            border-color: var(--tg-theme-button-color, #58a6ff);
+        }
+
+        .profile-row {
+            display: flex;
+            gap: 6px;
+            margin-bottom: 12px;
+        }
+        .profile-btn {
+            flex: 1;
+            padding: 10px 6px;
+            border-radius: 8px;
+            border: 1px solid var(--tg-theme-secondary-bg-color, #30363d);
+            background: var(--tg-theme-secondary-bg-color, #161b22);
+            color: var(--tg-theme-text-color, #c9d1d9);
+            font-size: 13px;
+            font-weight: 600;
+            text-align: center;
+            cursor: pointer;
+        }
+        .profile-btn.active {
+            background: var(--tg-theme-button-color, #58a6ff);
+            color: var(--tg-theme-button-text-color, #fff);
+            border-color: var(--tg-theme-button-color, #58a6ff);
+        }
+
+        .scan-btn {
+            width: 100%;
+            padding: 14px;
+            border-radius: 10px;
+            border: none;
+            background: var(--tg-theme-button-color, #238636);
+            color: var(--tg-theme-button-text-color, #fff);
+            font-size: 16px;
+            font-weight: 700;
+            cursor: pointer;
+            margin-top: 8px;
+        }
+        .scan-btn:active {
+            transform: scale(0.98);
+            opacity: 0.9;
+        }
+    </style>
+</head>
+<body>
+
+<div class="tabs">
+    <button class="tab active" onclick="switchTab('commands')">Befehle</button>
+    <button class="tab" onclick="switchTab('scan')">Scan</button>
+    <button class="tab" onclick="switchTab('osint')">OSINT</button>
+</div>
+
+<!-- BEFEHLE -->
+<div class="panel active" id="panel-commands">
+    <h2>System</h2>
+    <div class="cmd-grid">
+        <button class="cmd-btn" onclick="send('/status')">
+            <span class="icon">&#9881;</span> /status
+            <span class="label">Container-Status</span>
+        </button>
+        <button class="cmd-btn" onclick="send('/vpn')">
+            <span class="icon">&#128274;</span> /vpn
+            <span class="label">VPN-Status</span>
+        </button>
+        <button class="cmd-btn" onclick="send('/ip')">
+            <span class="icon">&#127760;</span> /ip
+            <span class="label">Externe IP</span>
+        </button>
+        <button class="cmd-btn" onclick="send('/audit')">
+            <span class="icon">&#128209;</span> /audit
+            <span class="label">Letzte Aktionen</span>
+        </button>
+    </div>
+
+    <h2>Logs</h2>
+    <div class="cmd-grid">
+        <button class="cmd-btn" onclick="send('/logs kali')">
+            <span class="icon">&#128039;</span> Kali
+            <span class="label">Logs anzeigen</span>
+        </button>
+        <button class="cmd-btn" onclick="send('/logs cloudbot')">
+            <span class="icon">&#129302;</span> Cloudbot
+            <span class="label">Logs anzeigen</span>
+        </button>
+        <button class="cmd-btn" onclick="send('/logs nordvpn')">
+            <span class="icon">&#128274;</span> NordVPN
+            <span class="label">Logs anzeigen</span>
+        </button>
+    </div>
+
+    <h2>Container steuern</h2>
+    <div class="cmd-grid">
+        <button class="cmd-btn" onclick="send('/restart kali')">
+            <span class="icon">&#128260;</span> Kali restart
+            <span class="label">Neustart</span>
+        </button>
+        <button class="cmd-btn" onclick="send('/start kali')">
+            <span class="icon">&#9654;</span> Kali start
+            <span class="label">Starten</span>
+        </button>
+        <button class="cmd-btn danger" onclick="send('/stop kali')">
+            <span class="icon">&#9632;</span> Kali stop
+            <span class="label">Stoppen</span>
+        </button>
+    </div>
+
+    <h2>Kali ausfuehren</h2>
+    <div class="cmd-grid">
+        <button class="cmd-btn wide" onclick="execCustom()">
+            <span class="icon">&#9000;</span> /exec kali ...
+            <span class="label">Eigenen Befehl eingeben</span>
+        </button>
+    </div>
+</div>
+
+<!-- SCAN -->
+<div class="panel" id="panel-scan">
+    <h2>Scan-Profil</h2>
+    <div class="profile-row">
+        <button class="profile-btn" onclick="selectProfile(this, 'schnell')">Schnell</button>
+        <button class="profile-btn active" onclick="selectProfile(this, 'normal')">Normal</button>
+        <button class="profile-btn" onclick="selectProfile(this, 'intensiv')">Intensiv</button>
+    </div>
+
+    <div class="form-group">
+        <label>Ziel (Domain / IP)</label>
+        <input type="text" id="scanTarget" placeholder="z.B. hackthissite.org oder 192.168.178.0/24">
+    </div>
+
+    <div class="form-group">
+        <label>Ports (optional)</label>
+        <input type="text" id="scanPorts" placeholder="z.B. 80,443 oder 1-1000">
+    </div>
+
+    <div class="form-group">
+        <label>Exploit-Modus</label>
+        <div class="profile-row">
+            <button class="profile-btn active" onclick="selectExploit(this, 'nein')">Nur finden</button>
+            <button class="profile-btn" onclick="selectExploit(this, 'fragen')">Nachfragen</button>
+            <button class="profile-btn" onclick="selectExploit(this, 'ja')">Ausfuehren</button>
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label>Zusaetzliche Anweisungen</label>
+        <textarea id="scanExtra" rows="2" placeholder="z.B. Fokus auf Web-Schwachstellen"></textarea>
+    </div>
+
+    <button class="scan-btn" onclick="sendScan()">Scan starten</button>
+</div>
+
+<!-- OSINT -->
+<div class="panel" id="panel-osint">
+    <h2>Ziel</h2>
+    <div class="form-group">
+        <label>Typ</label>
+        <select id="osintType">
+            <option value="person">Person</option>
+            <option value="email">E-Mail Adresse</option>
+            <option value="domain">Domain / Firma</option>
+            <option value="username">Username</option>
+        </select>
+    </div>
+
+    <div class="form-group">
+        <label>Name / E-Mail / Domain</label>
+        <input type="text" id="osintTarget" placeholder="z.B. Max Mustermann">
+    </div>
+
+    <div class="form-group">
+        <label>Zusaetzliche Infos</label>
+        <textarea id="osintExtra" rows="2" placeholder="z.B. Firma, Stadt, bekannte Accounts..."></textarea>
+    </div>
+
+    <div class="form-group">
+        <label>Suchtiefe</label>
+        <div class="profile-row">
+            <button class="profile-btn" onclick="selectOsintDepth(this, 'basis')">Basis</button>
+            <button class="profile-btn active" onclick="selectOsintDepth(this, 'standard')">Standard</button>
+            <button class="profile-btn" onclick="selectOsintDepth(this, 'tief')">Tief</button>
+        </div>
+    </div>
+
+    <button class="scan-btn" onclick="sendOsint()">OSINT starten</button>
+</div>
+
+<div class="sent-toast" id="toast">Gesendet!</div>
+
+<script>
+const tg = window.Telegram.WebApp;
+tg.ready();
+tg.expand();
+
+let scanProfile = 'normal';
+let exploitMode = 'nein';
+let osintDepth = 'standard';
+
+function switchTab(name) {
+    document.querySelectorAll('.tab').forEach((t, i) => {
+        t.classList.toggle('active', t.textContent.toLowerCase().includes(name.substring(0, 4)));
+    });
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    document.getElementById('panel-' + name).classList.add('active');
+}
+
+function showToast(text) {
+    const toast = document.getElementById('toast');
+    toast.textContent = text || 'Gesendet!';
+    toast.classList.add('show');
+    setTimeout(() => toast.classList.remove('show'), 1500);
+}
+
+function send(command) {
+    tg.sendData(command);
+    showToast(command);
+}
+
+function execCustom() {
+    const cmd = prompt('Befehl fuer Kali:');
+    if (cmd && cmd.trim()) {
+        send('/exec kali ' + cmd.trim());
+    }
+}
+
+function selectProfile(el, profile) {
+    scanProfile = profile;
+    el.parentElement.querySelectorAll('.profile-btn').forEach(b => b.classList.remove('active'));
+    el.classList.add('active');
+}
+
+function selectExploit(el, mode) {
+    exploitMode = mode;
+    el.parentElement.querySelectorAll('.profile-btn').forEach(b => b.classList.remove('active'));
+    el.classList.add('active');
+}
+
+function selectOsintDepth(el, depth) {
+    osintDepth = depth;
+    el.parentElement.querySelectorAll('.profile-btn').forEach(b => b.classList.remove('active'));
+    el.classList.add('active');
+}
+
+function sendScan() {
+    const target = document.getElementById('scanTarget').value.trim();
+    if (!target) { alert('Bitte Ziel eingeben'); return; }
+
+    let msg = `Profil: ${scanProfile}\n\nAnalysiere: ${target}`;
+
+    const ports = document.getElementById('scanPorts').value.trim();
+    if (ports) msg += `\nPorts: ${ports}`;
+
+    if (exploitMode === 'ja') {
+        msg += '\n\nExploits ausfuehren: Gefundene Schwachstellen aktiv ausnutzen und dokumentieren.';
+    } else if (exploitMode === 'fragen') {
+        msg += '\n\nBei gefundenen Schwachstellen: Frage mich vor der Ausfuehrung ob Exploits angewendet werden sollen.';
+    } else {
+        msg += '\n\nNur identifizieren, keine Exploits ausfuehren.';
+    }
+
+    const extra = document.getElementById('scanExtra').value.trim();
+    if (extra) msg += '\n\n' + extra;
+
+    msg += '\n\nSpeichere alle Ergebnisse in /root/data/scans/';
+
+    send(msg);
+}
+
+function sendOsint() {
+    const target = document.getElementById('osintTarget').value.trim();
+    if (!target) { alert('Bitte Ziel eingeben'); return; }
+
+    const type = document.getElementById('osintType').value;
+    const labels = { person: 'Person', email: 'E-Mail', domain: 'Domain/Firma', username: 'Username' };
+
+    let msg = `OSINT-Recherche (${labels[type]}): ${target}`;
+    msg += `\nSuchtiefe: ${osintDepth}`;
+
+    const extra = document.getElementById('osintExtra').value.trim();
+    if (extra) msg += `\n\nZusaetzliche Infos: ${extra}`;
+
+    if (osintDepth === 'tief') {
+        msg += '\nPruefe auch: Data Breaches, Paste Sites, Darknet-Mentions, Leak-Datenbanken';
+    }
+
+    msg += '\n\nSpeichere alle Ergebnisse in /root/data/scans/';
+
+    send(msg);
+}
+</script>
+
+</body>
+</html>

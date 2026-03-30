@@ -1,6 +1,6 @@
 import os
 import docker
-from telegram import Update
+from telegram import Update, WebAppInfo, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
 from security import (
@@ -184,6 +184,37 @@ async def cmd_audit(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 @authorized
+async def cmd_vpn(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        container = client.containers.get("nordvpn")
+        result = container.exec_run("nordvpn status", demux=True)
+        stdout = result.output[0].decode("utf-8", errors="replace") if result.output[0] else ""
+        stderr = result.output[1].decode("utf-8", errors="replace") if result.output[1] else ""
+        output = stdout or stderr or "(keine Ausgabe)"
+        output = sanitize_output(output)
+        await update.message.reply_text(f"VPN Status:\n\n{output}")
+        log_action(update.effective_chat.id, "vpn", "", "angezeigt", True)
+    except docker.errors.NotFound:
+        await update.message.reply_text("NordVPN-Container nicht gefunden.")
+        log_action(update.effective_chat.id, "vpn", "", "nicht gefunden", False)
+
+
+@authorized
+async def cmd_ip(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        container = client.containers.get("nordvpn")
+        result = container.exec_run("curl -s --max-time 10 ifconfig.me", demux=True)
+        stdout = result.output[0].decode("utf-8", errors="replace") if result.output[0] else ""
+        stderr = result.output[1].decode("utf-8", errors="replace") if result.output[1] else ""
+        ip = stdout.strip() if stdout.strip() else "Konnte IP nicht ermitteln."
+        await update.message.reply_text(f"Externe IP: {ip}")
+        log_action(update.effective_chat.id, "ip", "", ip, True)
+    except docker.errors.NotFound:
+        await update.message.reply_text("NordVPN-Container nicht gefunden.")
+        log_action(update.effective_chat.id, "ip", "", "nicht gefunden", False)
+
+
+@authorized
 async def cmd_hilfe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "Cloudbot Befehle\n\n"
@@ -193,13 +224,79 @@ async def cmd_hilfe(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/restart <name> -- Container neustarten\n"
         "/logs <name> -- Letzte 30 Log-Zeilen\n"
         "/exec <name> <befehl> -- Befehl ausfuehren\n"
+        "/vpn -- VPN-Status anzeigen\n"
+        "/ip -- Externe IP anzeigen\n"
         "/audit -- Letzte 20 Aktionen anzeigen\n"
+        "/app -- Dashboard oeffnen (Mini App)\n"
         "/hilfe -- Diese Hilfe anzeigen\n\n"
         "KI-Modus: Schreibe einfach eine Nachricht ohne /\n"
         "z.B. 'Scanne mein Netzwerk nach offenen Ports'"
     )
     await update.message.reply_text(text)
     log_action(update.effective_chat.id, "hilfe", "", "angezeigt", True)
+
+
+WEBAPP_URL = os.environ.get("WEBAPP_URL", "")
+
+
+@authorized
+async def cmd_app(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not WEBAPP_URL:
+        await update.message.reply_text("Mini App nicht konfiguriert (WEBAPP_URL fehlt).")
+        return
+    keyboard = ReplyKeyboardMarkup(
+        [[KeyboardButton("Dashboard", web_app=WebAppInfo(url=WEBAPP_URL))]],
+        resize_keyboard=True,
+    )
+    await update.message.reply_text("Oeffne das Dashboard:", reply_markup=keyboard)
+    log_action(update.effective_chat.id, "app", "", "Dashboard geoeffnet", True)
+
+
+@authorized
+async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    data = update.effective_message.web_app_data.data
+    chat_id = update.effective_chat.id
+    log_action(chat_id, "webapp", data[:100], "empfangen", True)
+
+    # Slash-Befehle direkt ausfuehren
+    if data.startswith("/"):
+        parts = data.split(None, 2)
+        cmd = parts[0].lstrip("/")
+        args = parts[1:] if len(parts) > 1 else []
+        context.args = args
+
+        handlers = {
+            "status": cmd_status,
+            "vpn": cmd_vpn,
+            "ip": cmd_ip,
+            "audit": cmd_audit,
+            "hilfe": cmd_hilfe,
+            "logs": cmd_logs,
+            "start": cmd_start,
+            "stop": cmd_stop,
+            "restart": cmd_restart,
+        }
+
+        if cmd == "exec" and len(args) >= 2:
+            context.args = [args[0], " ".join(args[1:])] if len(parts) > 2 else args
+            await cmd_exec(update, context)
+        elif cmd in handlers:
+            await handlers[cmd](update, context)
+        else:
+            await update.message.reply_text(f"Unbekannter Befehl: /{cmd}")
+        return
+
+    # Freitext -> KI
+    try:
+        response = await process_message(data, chat_id)
+        if response:
+            while response:
+                chunk = response[:4000]
+                response = response[4000:]
+                await update.message.reply_text(chunk)
+    except Exception as e:
+        await update.message.reply_text(f"Fehler: {str(e)[:500]}")
+        log_action(chat_id, "ai_chat", data[:100], str(e)[:200], False)
 
 
 @authorized
@@ -228,9 +325,13 @@ def main():
     app.add_handler(CommandHandler("logs", cmd_logs))
     app.add_handler(CommandHandler("exec", cmd_exec))
     app.add_handler(CommandHandler("audit", cmd_audit))
+    app.add_handler(CommandHandler("vpn", cmd_vpn))
+    app.add_handler(CommandHandler("ip", cmd_ip))
+    app.add_handler(CommandHandler("app", cmd_app))
     app.add_handler(CommandHandler("hilfe", cmd_hilfe))
+    app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_webapp_data))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    print("Cloudbot laeuft... (mit KI)")
+    print("Cloudbot laeuft... (mit KI + Mini App)")
     app.run_polling()
 
 

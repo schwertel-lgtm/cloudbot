@@ -9,7 +9,7 @@ import re
 ALLOWED_CHAT_ID = int(os.environ["TELEGRAM_CHAT_ID"])
 
 # Whitelist erlaubter Container-Namen
-ALLOWED_CONTAINERS = {"kali", "cloudbot"}
+ALLOWED_CONTAINERS = {"kali", "cloudbot", "nordvpn"}
 
 # Maximale Befehlslaenge
 MAX_COMMAND_LENGTH = 500
