@@ -246,196 +246,8 @@
     <div class="main-panel">
 
         <div class="section">
-            <h3>Modus</h3>
-            <div class="profile-buttons" style="margin-bottom:10px;">
-                <div class="profile-btn manuell" onclick="selectMode('manuell')">Manuell<br><span style="font-size:11px;color:#8b949e">Tools selbst waehlen</span></div>
-                <div class="profile-btn auto active" onclick="selectMode('auto')">Automatisch<br><span style="font-size:11px;color:#8b949e">Tools passend zu Eingabe</span></div>
-            </div>
-            <h3>Scan-Profil</h3>
-            <div class="profile-buttons">
-                <div class="profile-btn schnell" onclick="selectProfile('schnell')">Schnell<br><span style="font-size:11px;color:#8b949e">1-5 Min</span></div>
-                <div class="profile-btn normal" onclick="selectProfile('normal')">Normal<br><span style="font-size:11px;color:#8b949e">10-30 Min</span></div>
-                <div class="profile-btn intensiv" onclick="selectProfile('intensiv')">Intensiv<br><span style="font-size:11px;color:#8b949e">1-4 Std</span></div>
-            </div>
-        </div>
-
-        <div class="section">
-            <h3>Ziel — Netzwerk / Web</h3>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Domain / URL</label>
-                    <input type="text" id="target" placeholder="z.B. hackthissite.org">
-                </div>
-                <div class="form-group">
-                    <label>IP-Adresse</label>
-                    <input type="text" id="targetIP" placeholder="z.B. 192.168.178.1">
-                </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Netzwerk (Subnet)</label>
-                    <input type="text" id="targetNetwork" placeholder="z.B. 192.168.178.0/24">
-                </div>
-                <div class="form-group">
-                    <label>Protokoll</label>
-                    <select id="protocol">
-                        <option value="">- Automatisch -</option>
-                        <option value="ssh">SSH</option>
-                        <option value="ftp">FTP</option>
-                        <option value="http">HTTP</option>
-                        <option value="https">HTTPS</option>
-                        <option value="smb">SMB</option>
-                        <option value="rdp">RDP</option>
-                        <option value="mysql">MySQL</option>
-                        <option value="mssql">MSSQL</option>
-                    </select>
-                </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Port-Range</label>
-                    <input type="text" id="ports" placeholder="z.B. 80,443 oder 1-1000">
-                </div>
-                <div class="form-group">
-                    <label>Wordlist</label>
-                    <select id="wordlist">
-                        <option value="">Standard</option>
-                        <option value="/usr/share/wordlists/rockyou.txt">rockyou.txt</option>
-                        <option value="/usr/share/wordlists/dirb/common.txt">dirb/common.txt</option>
-                        <option value="/usr/share/wordlists/dirb/big.txt">dirb/big.txt</option>
-                        <option value="/usr/share/seclists/Discovery/Web-Content/raft-large-words.txt">SecLists raft-large</option>
-                    </select>
-                </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Benutzername</label>
-                    <input type="text" id="username" placeholder="z.B. admin">
-                </div>
-                <div class="form-group">
-                    <label>Passwort</label>
-                    <input type="text" id="password" placeholder="optional">
-                </div>
-            </div>
-        </div>
-
-        <div class="section">
-            <h3>OSINT — Person</h3>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Vorname</label>
-                    <input type="text" id="firstName" placeholder="z.B. Max">
-                </div>
-                <div class="form-group">
-                    <label>Nachname</label>
-                    <input type="text" id="lastName" placeholder="z.B. Mustermann">
-                </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>E-Mail (bekannt)</label>
-                    <input type="text" id="personEmail" placeholder="z.B. max@example.com">
-                </div>
-                <div class="form-group">
-                    <label>Telefonnummer</label>
-                    <input type="text" id="personPhone" placeholder="z.B. +49 170 1234567">
-                </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Firma / Arbeitgeber</label>
-                    <input type="text" id="personCompany" placeholder="z.B. Firma GmbH">
-                </div>
-                <div class="form-group">
-                    <label>Position / Rolle</label>
-                    <input type="text" id="personRole" placeholder="z.B. Geschaeftsfuehrer">
-                </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Stadt / Region</label>
-                    <input type="text" id="personCity" placeholder="z.B. Berlin">
-                </div>
-                <div class="form-group">
-                    <label>Land</label>
-                    <input type="text" id="personCountry" placeholder="z.B. Deutschland">
-                </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Social Media Username</label>
-                    <input type="text" id="personSocial" placeholder="z.B. @maxmuster">
-                </div>
-                <div class="form-group">
-                    <label>Webseite / Domain (bekannt)</label>
-                    <input type="text" id="personWebsite" placeholder="z.B. www.maxmustermann.de">
-                </div>
-            </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>Plattformen pruefen</label>
-                    <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:5px;">
-                        <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="pLinkedin"> LinkedIn</label>
-                        <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="pXing"> XING</label>
-                        <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="pTwitter"> Twitter/X</label>
-                        <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="pFacebook"> Facebook</label>
-                        <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="pInstagram"> Instagram</label>
-                        <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="pGithub"> GitHub</label>
-                        <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="pReddit"> Reddit</label>
-                    </div>
-                </div>
-                <div class="form-group">
-                    <label>OSINT Suchtiefe</label>
-                    <select id="osintDepth">
-                        <option value="basic">Basis — Name, Email, Social Media</option>
-                        <option value="standard" selected>Standard — + Firma, Domains, Breaches</option>
-                        <option value="deep">Tief — + Darknet, Leaks, Verbindungen</option>
-                        <option value="full">Komplett — Alles verfuegbare</option>
-                    </select>
-                </div>
-            </div>
-        </div>
-
-        <div class="section">
-            <h3>OSINT — E-Mail</h3>
-            <div class="form-row">
-                <div class="form-group">
-                    <label>E-Mail Adresse</label>
-                    <input type="text" id="emailAddr" placeholder="z.B. info@example.com">
-                </div>
-                <div class="form-group">
-                    <label>Zugehoerige Domain</label>
-                    <input type="text" id="emailDomain" placeholder="z.B. example.com">
-                </div>
-            </div>
-            <div class="form-group">
-                <label>Bekannter Name zur E-Mail</label>
-                <input type="text" id="emailName" placeholder="z.B. Max Mustermann">
-            </div>
-            <div class="form-group">
-                <label>Pruefungen</label>
-                <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:5px;">
-                    <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="chkBreach" checked> Data Breaches</label>
-                    <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="chkPaste" checked> Paste Sites</label>
-                    <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="chkSocial" checked> Social Media</label>
-                    <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="chkDomain" checked> Domain-Verknuepfung</label>
-                    <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="chkReputation"> Reputation</label>
-                    <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="chkDarknet"> Darknet</label>
-                </div>
-            </div>
-        </div>
-
-        <div class="section">
-            <h3>Forensik — Datei</h3>
-            <div class="form-group">
-                <label>Dateipfad</label>
-                <input type="text" id="forensicFile" placeholder="z.B. /root/data/evidence/image.jpg">
-            </div>
-        </div>
-
-        <div class="section">
             <h3>Bot-Befehle (Telegram)</h3>
-            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+            <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:8px;">
                 <button class="bot-cmd-btn" onclick="setBotCmd('/status')">/status</button>
                 <button class="bot-cmd-btn" onclick="setBotCmd('/vpn')">/vpn</button>
                 <button class="bot-cmd-btn" onclick="setBotCmd('/ip')">/ip</button>
@@ -443,27 +255,40 @@
                 <button class="bot-cmd-btn" onclick="setBotCmd('/logs kali')">/logs kali</button>
                 <button class="bot-cmd-btn" onclick="setBotCmd('/logs cloudbot')">/logs cloudbot</button>
                 <button class="bot-cmd-btn" onclick="setBotCmd('/logs nordvpn')">/logs nordvpn</button>
-                <button class="bot-cmd-btn" onclick="setBotCmd('/restart kali')">/restart kali</button>
+                <button class="bot-cmd-btn" onclick="setBotCmd('/hilfe')">/hilfe</button>
                 <button class="bot-cmd-btn" onclick="setBotCmd('/start kali')">/start kali</button>
                 <button class="bot-cmd-btn" onclick="setBotCmd('/stop kali')">/stop kali</button>
-                <button class="bot-cmd-btn" onclick="setBotCmd('/hilfe')">/hilfe</button>
+                <button class="bot-cmd-btn" onclick="setBotCmd('/restart kali')">/restart kali</button>
                 <button class="bot-cmd-btn" onclick="setBotCmd('/exec kali ' + prompt('Befehl:'))">/exec kali ...</button>
             </div>
         </div>
 
         <div class="section">
+            <h3>Scan / Auftrag</h3>
+            <div class="form-group">
+                <label>Ziel</label>
+                <input type="text" id="target" placeholder="Domain, IP, Netzwerk, E-Mail, Person...">
+            </div>
+            <h3 style="margin-top:10px;">Modus</h3>
+            <div class="profile-buttons" style="margin-bottom:10px;">
+                <div class="profile-btn manuell" onclick="selectMode('manuell')">Manuell<br><span style="font-size:11px;color:#8b949e">Tools selbst waehlen</span></div>
+                <div class="profile-btn auto active" onclick="selectMode('auto')">Automatisch<br><span style="font-size:11px;color:#8b949e">KI waehlt Tools</span></div>
+            </div>
+            <h3>Scan-Profil</h3>
+            <div class="profile-buttons">
+                <div class="profile-btn schnell" onclick="selectProfile('schnell')">Schnell<br><span style="font-size:11px;color:#8b949e">1-5 Min</span></div>
+                <div class="profile-btn normal" onclick="selectProfile('normal')">Normal<br><span style="font-size:11px;color:#8b949e">10-30 Min</span></div>
+                <div class="profile-btn intensiv" onclick="selectProfile('intensiv')">Intensiv<br><span style="font-size:11px;color:#8b949e">1-4 Std</span></div>
+            </div>
             <h3>Exploit-Modus</h3>
             <div class="profile-buttons">
-                <div class="profile-btn exploit-nein active" onclick="selectExploit('nein')">Nur identifizieren<br><span style="font-size:11px;color:#8b949e">Schwachstellen finden, nicht ausnutzen</span></div>
-                <div class="profile-btn exploit-fragen" onclick="selectExploit('fragen')">Nachfragen<br><span style="font-size:11px;color:#8b949e">Vor Exploit-Ausfuehrung fragen</span></div>
+                <div class="profile-btn exploit-nein active" onclick="selectExploit('nein')">Nur identifizieren<br><span style="font-size:11px;color:#8b949e">Schwachstellen finden</span></div>
+                <div class="profile-btn exploit-fragen" onclick="selectExploit('fragen')">Nachfragen<br><span style="font-size:11px;color:#8b949e">Vor Exploit fragen</span></div>
                 <div class="profile-btn exploit-ja" onclick="selectExploit('ja')">Exploits ausfuehren<br><span style="font-size:11px;color:#8b949e">Automatisch ausnutzen</span></div>
             </div>
-        </div>
-
-        <div class="section">
-            <h3>Zusaetzliche Anweisungen</h3>
-            <div class="form-group">
-                <textarea id="extraInstructions" placeholder="z.B. 'Erstelle einen vollstaendigen Bericht' oder 'Fokus auf Web-Schwachstellen'" rows="3"></textarea>
+            <div class="form-group" style="margin-top:12px;">
+                <label>Zusaetzliche Anweisungen (optional)</label>
+                <textarea id="extraInstructions" placeholder="z.B. Fokus auf Web-Schwachstellen, nur Port 443, erstelle Bericht..." rows="2"></textarea>
             </div>
         </div>
 
@@ -527,129 +352,54 @@ function selectExploit(mode) {
 }
 
 function autoSelectTools() {
-    // Alle Checkboxen zuruecksetzen
     document.querySelectorAll('.tool-category input[type="checkbox"]').forEach(cb => cb.checked = false);
 
-    const target = document.getElementById('target').value;
-    const targetIP = document.getElementById('targetIP').value;
-    const targetNetwork = document.getElementById('targetNetwork').value;
-    const hasPerson = document.getElementById('firstName').value || document.getElementById('lastName').value;
-    const hasEmail = document.getElementById('emailAddr').value;
-    const hasForensic = document.getElementById('forensicFile').value;
-    const hasCredentials = document.getElementById('username').value;
+    const target = document.getElementById('target').value.trim().toLowerCase();
+    if (!target) { updateToolTags(); return; }
+
     const profile = selectedProfile || 'normal';
+    const isIP = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}/.test(target);
+    const isNetwork = target.includes('/');
+    const isEmail = target.includes('@');
+    const isDomain = !isIP && !isNetwork && !isEmail && target.includes('.');
 
-    // --- Domain/Web ---
-    if (target) {
-        check('whatweb');
-        check('wafw00f');
-        check('whois');
-        check('dnsrecon');
+    // Domain / URL
+    if (isDomain) {
+        check('whatweb'); check('wafw00f'); check('whois'); check('dnsrecon');
         if (profile === 'normal' || profile === 'intensiv') {
-            check('nmap');
-            check('nikto');
-            check('gobuster');
-            check('nuclei');
-            check('sslyze');
-            check('subfinder');
-            check('theharvester');
+            check('nmap'); check('nikto'); check('gobuster'); check('nuclei'); check('sslyze'); check('subfinder'); check('theharvester');
         }
         if (profile === 'intensiv') {
-            check('amass');
-            check('fierce');
-            check('sqlmap');
-            check('dirb');
-            check('commix');
-            check('shodan');
+            check('amass'); check('fierce'); check('sqlmap'); check('dirb'); check('commix'); check('shodan');
         }
     }
 
-    // --- IP ---
-    if (targetIP) {
+    // IP
+    if (isIP) {
+        check('nmap'); check('shodan');
+        if (profile === 'normal' || profile === 'intensiv') { check('nikto'); check('enum4linux'); check('smbmap'); }
+        if (profile === 'intensiv') { check('nuclei'); check('searchsploit'); check('smbclient'); }
+    }
+
+    // Netzwerk
+    if (isNetwork) {
         check('nmap');
-        check('shodan');
-        if (profile === 'normal' || profile === 'intensiv') {
-            check('nikto');
-            check('enum4linux');
-            check('smbmap');
-        }
-        if (profile === 'intensiv') {
-            check('nuclei');
-            check('searchsploit');
-            check('smbclient');
-        }
+        if (profile === 'normal' || profile === 'intensiv') { check('enum4linux'); check('smbmap'); check('responder'); }
+        if (profile === 'intensiv') { check('crackmapexec'); check('bettercap'); }
     }
 
-    // --- Netzwerk ---
-    if (targetNetwork) {
-        check('nmap');
-        if (profile === 'normal' || profile === 'intensiv') {
-            check('enum4linux');
-            check('smbmap');
-            check('responder');
-        }
-        if (profile === 'intensiv') {
-            check('crackmapexec');
-            check('bettercap');
-        }
-    }
-
-    // --- OSINT Person ---
-    if (hasPerson) {
+    // E-Mail / OSINT
+    if (isEmail) {
         check('theharvester');
-        check('whois');
-        check('shodan');
-        if (profile === 'normal' || profile === 'intensiv') {
-            check('recon-ng');
-            check('dnsrecon');
-        }
-        if (profile === 'intensiv') {
-            check('amass');
-            check('subfinder');
-        }
+        if (profile === 'normal' || profile === 'intensiv') { check('recon-ng'); check('whois'); }
+        if (profile === 'intensiv') { check('shodan'); }
     }
 
-    // --- OSINT Email ---
-    if (hasEmail) {
-        check('theharvester');
-        if (profile === 'normal' || profile === 'intensiv') {
-            check('recon-ng');
-            check('whois');
-        }
-        if (profile === 'intensiv') {
-            check('shodan');
-        }
-    }
-
-    // --- Forensik ---
-    if (hasForensic) {
-        check('binwalk');
-        check('exiftool');
-        check('steghide');
-        if (profile === 'normal' || profile === 'intensiv') {
-            check('foremost');
-            check('yara');
-            check('clamav');
-        }
-        if (profile === 'intensiv') {
-            check('autopsy');
-            check('volatility');
-            check('chkrootkit');
-        }
-    }
-
-    // --- Credentials vorhanden ---
-    if (hasCredentials) {
-        if (profile === 'normal' || profile === 'intensiv') {
-            check('hydra');
-            check('crackmapexec');
-        }
-        if (profile === 'intensiv') {
-            check('medusa');
-            check('evil-winrm');
-            check('bloodhound');
-            check('impacket');
-        }
+    // Freitext (Person/Sonstiges) - wenn nichts anderes matched
+    if (!isDomain && !isIP && !isNetwork && !isEmail) {
+        check('theharvester'); check('whois'); check('shodan');
+        if (profile === 'normal' || profile === 'intensiv') { check('recon-ng'); check('dnsrecon'); }
+        if (profile === 'intensiv') { check('amass'); check('subfinder'); }
     }
 
     updateToolTags();
@@ -690,135 +440,35 @@ document.querySelectorAll('.tool-item input').forEach(cb => {
 });
 
 function generateCommand() {
-    const target = document.getElementById('target').value;
-    const targetIP = document.getElementById('targetIP').value;
-    const targetNetwork = document.getElementById('targetNetwork').value;
-    const protocol = document.getElementById('protocol').value;
-    const username = document.getElementById('username').value;
-    const password = document.getElementById('password').value;
-    const ports = document.getElementById('ports').value;
-    const wordlist = document.getElementById('wordlist').value;
-
-    const fName = document.getElementById('firstName').value;
-    const lName = document.getElementById('lastName').value;
-    const pEmail = document.getElementById('personEmail').value;
-    const pPhone = document.getElementById('personPhone').value;
-    const pCompany = document.getElementById('personCompany').value;
-    const pRole = document.getElementById('personRole').value;
-    const pCity = document.getElementById('personCity').value;
-    const pCountry = document.getElementById('personCountry').value;
-    const pSocial = document.getElementById('personSocial').value;
-    const pWebsite = document.getElementById('personWebsite').value;
-    const pDepth = document.getElementById('osintDepth').value;
-
-    const emailAddr = document.getElementById('emailAddr').value;
-    const emailDomain = document.getElementById('emailDomain').value;
-    const emailName = document.getElementById('emailName').value;
-
-    const forensicFile = document.getElementById('forensicFile').value;
-    const extra = document.getElementById('extraInstructions').value;
+    const target = document.getElementById('target').value.trim();
+    const extra = document.getElementById('extraInstructions').value.trim();
     const tools = getSelectedTools();
+
+    if (!target) {
+        alert('Bitte ein Ziel eingeben'); return;
+    }
 
     // Im Auto-Modus Tools automatisch waehlen
     if (selectedMode === 'auto') {
         autoSelectTools();
     }
 
-    // Pruefen ob ueberhaupt etwas eingegeben wurde
-    const hasTarget = target || targetIP || targetNetwork;
-    const hasPerson = fName || lName || pEmail || pPhone || pCompany || pSocial;
-    const hasEmail = emailAddr;
-    const hasForensic = forensicFile;
-
-    if (!hasTarget && !hasPerson && !hasEmail && !hasForensic) {
-        alert('Bitte mindestens ein Ziel eingeben'); return;
-    }
-
     let command = '';
 
-    // Profil
     if (selectedProfile) {
         command += `Profil: ${selectedProfile}\n\n`;
     }
 
-    // --- Netzwerk / Web Ziele ---
-    if (hasTarget) {
-        const targets = [target, targetIP, targetNetwork].filter(Boolean);
-        command += `Analysiere: ${targets.join(', ')}`;
-        if (protocol) command += ` (${protocol})`;
-        if (ports) command += `\nPorts: ${ports}`;
-        if (username) command += `\nBenutzername: ${username}`;
-        if (password) command += `\nPasswort: ${password}`;
-        if (wordlist) command += `\nWordlist: ${wordlist}`;
-        command += '\n';
+    command += `Analysiere: ${target}`;
+
+    if (selectedMode === 'auto') {
+        command += '\n\nWaehle automatisch die passenden Tools fuer dieses Ziel.';
     }
 
-    // --- OSINT Person ---
-    if (hasPerson) {
-        const fullName = (fName + ' ' + lName).trim();
-        if (hasTarget) command += '\n';
-        command += `OSINT-Recherche zu Person: ${fullName}`;
-        command += '\n\nBekannte Informationen:';
-        if (pEmail) command += `\n- E-Mail: ${pEmail}`;
-        if (pPhone) command += `\n- Telefon: ${pPhone}`;
-        if (pCompany) command += `\n- Firma: ${pCompany}`;
-        if (pRole) command += `\n- Position: ${pRole}`;
-        if (pCity || pCountry) command += `\n- Ort: ${[pCity, pCountry].filter(Boolean).join(', ')}`;
-        if (pSocial) command += `\n- Social Media: ${pSocial}`;
-        if (pWebsite) command += `\n- Webseite: ${pWebsite}`;
-
-        // Plattformen
-        const platforms = [];
-        if (document.getElementById('pLinkedin').checked) platforms.push('LinkedIn');
-        if (document.getElementById('pXing').checked) platforms.push('XING');
-        if (document.getElementById('pTwitter').checked) platforms.push('Twitter/X');
-        if (document.getElementById('pFacebook').checked) platforms.push('Facebook');
-        if (document.getElementById('pInstagram').checked) platforms.push('Instagram');
-        if (document.getElementById('pGithub').checked) platforms.push('GitHub');
-        if (document.getElementById('pReddit').checked) platforms.push('Reddit');
-        if (platforms.length > 0) command += `\n- Plattformen pruefen: ${platforms.join(', ')}`;
-
-        const depthLabels = { basic: 'Basis', standard: 'Standard', deep: 'Tiefenrecherche', full: 'Komplettanalyse' };
-        command += `\n\nSuchtiefe: ${depthLabels[pDepth]}`;
-        if (pDepth === 'deep' || pDepth === 'full') {
-            command += '\nPruefe auch: Data Breaches, Paste Sites, Darknet-Mentions, Leak-Datenbanken';
-        }
-        if (pDepth === 'full') {
-            command += '\nErstelle ein komplettes Dossier mit allen Verbindungen, Accounts, Aktivitaeten';
-        }
-        command += '\n';
+    if (tools.length > 0 && selectedMode === 'manuell') {
+        command += `\n\nNutze folgende Tools: ${tools.join(', ')}`;
     }
 
-    // --- OSINT Email ---
-    if (hasEmail) {
-        if (hasTarget || hasPerson) command += '\n';
-        command += `OSINT-Recherche zu E-Mail: ${emailAddr}`;
-        if (emailName) command += `\nBekannter Name: ${emailName}`;
-        if (emailDomain) command += `\nZugehoerige Domain: ${emailDomain}`;
-
-        const checks = [];
-        if (document.getElementById('chkBreach').checked) checks.push('Data Breaches');
-        if (document.getElementById('chkPaste').checked) checks.push('Paste Sites');
-        if (document.getElementById('chkSocial').checked) checks.push('Social Media');
-        if (document.getElementById('chkDomain').checked) checks.push('Domain-Verknuepfungen');
-        if (document.getElementById('chkReputation').checked) checks.push('Reputation');
-        if (document.getElementById('chkDarknet').checked) checks.push('Darknet');
-        if (checks.length > 0) command += `\nPruefe: ${checks.join(', ')}`;
-        command += '\n';
-    }
-
-    // --- Forensik ---
-    if (hasForensic) {
-        if (hasTarget || hasPerson || hasEmail) command += '\n';
-        command += `Forensische Analyse der Datei: ${forensicFile}\n`;
-    }
-
-    // --- Tools ---
-    if (tools.length > 0) {
-        command += `\nNutze folgende Tools: ${tools.join(', ')}`;
-    }
-
-    // --- Exploit-Modus ---
     if (selectedExploit === 'ja') {
         command += `\n\nExploits ausfuehren: Gefundene Schwachstellen aktiv ausnutzen und dokumentieren.`;
     } else if (selectedExploit === 'fragen') {
@@ -827,15 +477,12 @@ function generateCommand() {
         command += `\n\nNur identifizieren, keine Exploits ausfuehren.`;
     }
 
-    // --- Extra ---
     if (extra) command += `\n\n${extra}`;
 
-    // Ergebnis speichern
     command += `\n\nSpeichere alle Ergebnisse in /root/data/scans/`;
 
     document.getElementById('output').textContent = command;
 
-    // History
     history.unshift(command.substring(0, 80) + '...');
     if (history.length > 10) history = history.slice(0, 10);
     localStorage.setItem('cmdHistory', JSON.stringify(history));
@@ -857,17 +504,15 @@ function copyToClipboard() {
 
 function clearAll() {
     document.querySelectorAll('input[type="text"], textarea').forEach(el => el.value = '');
-    document.querySelectorAll('select').forEach(el => el.selectedIndex = 0);
     document.querySelectorAll('.tool-category input[type="checkbox"]').forEach(cb => cb.checked = false);
-    document.getElementById('chkBreach').checked = true;
-    document.getElementById('chkPaste').checked = true;
-    document.getElementById('chkSocial').checked = true;
-    document.getElementById('chkDomain').checked = true;
-    document.getElementById('wordlist').value = '';
-    document.getElementById('output').textContent = 'Waehle Tools und Ziel aus, dann klicke "Befehl generieren".';
-    document.querySelectorAll('.tool-item input:checked').forEach(cb => cb.checked = false);
+    document.getElementById('output').textContent = 'Ziel eingeben, Profil waehlen, Befehl generieren.';
     document.querySelectorAll('.profile-btn').forEach(b => b.classList.remove('active'));
+    document.querySelector('.profile-btn.auto').classList.add('active');
+    document.querySelector('.profile-btn.exploit-nein').classList.add('active');
     selectedProfile = '';
+    selectedMode = 'auto';
+    selectedExploit = 'nein';
+    selectMode('auto');
     updateToolTags();
 }
 
