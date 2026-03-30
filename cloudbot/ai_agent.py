@@ -13,7 +13,7 @@ from audit_log import log_action, log_blocked_command
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 MODEL = "claude-sonnet-4-20250514"
 MAX_STEPS = 15
-TIMEOUT_SECONDS = 90
+TIMEOUT_SECONDS = 180
 
 client_ai = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else None
 client_docker = docker.from_env()
@@ -138,6 +138,9 @@ Arbeite..."
 Dann fuehre ALLE Tools still aus ohne Zwischenkommentare.
 
 TEIL 2 - ENDBERICHT (nach allen Tool-Aufrufen):
+KRITISCH: Du MUSST den Endbericht als TEXT-ANTWORT zurueckgeben, NICHT in eine Datei schreiben!
+Der Bericht wird direkt an Telegram gesendet. Schreibe den kompletten Bericht als deine letzte Textantwort.
+
 Strukturierter Bericht mit:
 
 ERGEBNISSE:
@@ -314,8 +317,25 @@ async def process_message(user_message: str, chat_id: int) -> str:
 
             messages.append({"role": "user", "content": tool_results})
 
+    # Falls nur Startmeldung vorhanden: Bericht explizit anfordern
+    if full_response.strip() and len(full_response.strip()) < 500 and not timed_out:
+        try:
+            messages.append({"role": "user", "content": "Erstelle jetzt den kompletten Endbericht als Textantwort. Fasse alle Ergebnisse zusammen."})
+            response = client_ai.messages.create(
+                model=MODEL,
+                max_tokens=4096,
+                system=SYSTEM_PROMPT,
+                tools=TOOLS,
+                messages=messages,
+            )
+            for block in response.content:
+                if block.type == "text":
+                    full_response += block.text + "\n"
+        except Exception:
+            pass
+
     elapsed = int(time.time() - start_time)
-    log_action(chat_id, "ai_chat", user_message[:100], full_response[:200], True)
+    log_action(chat_id, "ai_chat", user_message[:100], f"[{len(full_response)} Zeichen, {elapsed}s] {full_response[:150]}", True)
 
     if timed_out:
         timeout_msg = f"\n\n(Timeout nach {elapsed}s - Zwischenergebnis)"
