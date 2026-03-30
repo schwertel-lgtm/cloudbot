@@ -286,7 +286,7 @@ async def process_message(user_message: str, chat_id: int) -> str:
         except Exception as e:
             log_action(chat_id, "ai_chat", user_message[:100], f"API-Fehler: {str(e)[:200]}", False)
             if full_response.strip():
-                return full_response.strip()[:3500] + "\n\n(Abbruch wegen API-Fehler)"
+                return full_response.strip() + "\n\n(Abbruch wegen API-Fehler)"
             return f"KI-Fehler: {str(e)[:200]}"
 
         # Text sammeln
@@ -326,4 +326,4 @@ async def process_message(user_message: str, chat_id: int) -> str:
     if not full_response.strip():
         return "Keine Antwort von der KI erhalten."
 
-    return full_response.strip()[:3500]
+    return full_response.strip()

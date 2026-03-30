@@ -12,7 +12,7 @@ ALLOWED_CHAT_ID = int(os.environ["TELEGRAM_CHAT_ID"])
 ALLOWED_CONTAINERS = {"kali", "cloudbot", "nordvpn"}
 
 # Maximale Befehlslaenge
-MAX_COMMAND_LENGTH = 500
+MAX_COMMAND_LENGTH = 2000
 
 # Blocklist fuer exec-Befehle (Regex-Patterns)
 BLOCKED_COMMANDS = [
