@@ -250,6 +250,11 @@
 
 <!-- SCAN -->
 <div class="panel" id="panel-scan">
+    <div class="form-group">
+        <label>Ziel</label>
+        <input type="text" id="scanTarget" placeholder="Domain, IP oder Netzwerk eingeben">
+    </div>
+
     <h2>Profil</h2>
     <div class="profile-row">
         <button class="profile-btn" onclick="selectProfile(this, 'schnell')">Schnell</button>
@@ -258,7 +263,8 @@
     </div>
 
     <div class="form-group">
-        <textarea id="scanInput" rows="4" placeholder="Schreib einfach was du willst, z.B.:&#10;&#10;Scanne hackthissite.org nach Schwachstellen&#10;Netzwerk-Scan 192.168.178.0/24&#10;Pruefe example.com auf offene Ports&#10;Finde SQL-Injection auf example.com/login"></textarea>
+        <label>Anweisungen (optional)</label>
+        <input type="text" id="scanExtra" placeholder="z.B. Fokus auf Web, nur Port 443...">
     </div>
 
     <button class="scan-btn" onclick="sendScan()">Scan starten</button>
@@ -276,6 +282,11 @@
 
 <!-- OSINT -->
 <div class="panel" id="panel-osint">
+    <div class="form-group">
+        <label>Ziel</label>
+        <input type="text" id="osintTarget" placeholder="Name, E-Mail, Domain oder Username">
+    </div>
+
     <h2>Suchtiefe</h2>
     <div class="profile-row">
         <button class="profile-btn" onclick="selectOsintDepth(this, 'basis')">Basis</button>
@@ -284,7 +295,8 @@
     </div>
 
     <div class="form-group">
-        <textarea id="osintInput" rows="4" placeholder="Schreib einfach was du suchst, z.B.:&#10;&#10;Finde alles ueber max.mustermann@gmail.com&#10;OSINT zu Firma XY GmbH, Berlin&#10;Recherchiere Username @johndoe&#10;Domain example.com - wem gehoert sie?"></textarea>
+        <label>Details (optional)</label>
+        <input type="text" id="osintExtra" placeholder="z.B. Firma, Stadt, bekannte Accounts">
     </div>
 
     <button class="scan-btn" onclick="sendOsint()">OSINT starten</button>
@@ -344,20 +356,33 @@ function quickScan(text) {
 }
 
 function sendScan() {
-    const input = document.getElementById('scanInput').value.trim();
-    if (!input) { alert('Bitte beschreiben was du scannen willst'); return; }
-    send(`Profil: ${scanProfile}\n\n${input}\n\nSpeichere alle Ergebnisse in /root/data/scans/`);
+    const target = document.getElementById('scanTarget').value.trim();
+    if (!target) { alert('Bitte Ziel eingeben'); return; }
+
+    let msg = `Profil: ${scanProfile}\n\nAnalysiere: ${target}`;
+    msg += '\n\nWaehle automatisch die passenden Tools fuer dieses Ziel.';
+
+    const extra = document.getElementById('scanExtra').value.trim();
+    if (extra) msg += '\n\n' + extra;
+
+    msg += '\n\nSpeichere alle Ergebnisse in /root/data/scans/';
+    send(msg);
 }
 
 function sendOsint() {
-    const input = document.getElementById('osintInput').value.trim();
-    if (!input) { alert('Bitte beschreiben was du suchst'); return; }
+    const target = document.getElementById('osintTarget').value.trim();
+    if (!target) { alert('Bitte Ziel eingeben'); return; }
 
-    let msg = `OSINT-Recherche (Suchtiefe: ${osintDepth}):\n\n${input}`;
+    let msg = `OSINT-Recherche (Suchtiefe: ${osintDepth}):\n\n${target}`;
+
+    const extra = document.getElementById('osintExtra').value.trim();
+    if (extra) msg += '\n\nZusaetzliche Infos: ' + extra;
+
     if (osintDepth === 'tief') {
         msg += '\n\nPruefe auch: Data Breaches, Paste Sites, Darknet-Mentions, Leak-Datenbanken';
     }
-    msg += '\n\nSpeichere alle Ergebnisse in /root/data/scans/';
+    msg += '\n\nWaehle automatisch die passenden Tools.';
+    msg += '\nSpeichere alle Ergebnisse in /root/data/scans/';
     send(msg);
 }
 </script>
