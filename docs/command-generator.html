@@ -516,6 +516,47 @@
         </div>
 
         <div class="section">
+            <h3>SEO-Analyse</h3>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>URL / Domain</label>
+                    <input type="text" id="seoUrl" placeholder="z.B. www.example.de">
+                </div>
+                <div class="form-group">
+                    <label>Konkurrenz-URL (optional)</label>
+                    <input type="text" id="seoCompetitor" placeholder="z.B. www.konkurrent.de">
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label>Ziel-Keywords</label>
+                    <input type="text" id="seoKeywords" placeholder="z.B. Zahnarzt Berlin, Implantate">
+                </div>
+                <div class="form-group">
+                    <label>Zielgruppe</label>
+                    <input type="text" id="seoAudience" placeholder="z.B. lokale Kunden, B2B">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Pruefbereiche</label>
+                <div style="display:flex; flex-wrap:wrap; gap:8px; margin-top:5px;">
+                    <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="seoMeta" checked> Meta-Tags</label>
+                    <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="seoHeadings" checked> Headings</label>
+                    <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="seoSSL" checked> SSL/HTTPS</label>
+                    <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="seoSpeed" checked> Ladezeit</label>
+                    <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="seoMobile" checked> Mobile</label>
+                    <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="seoLinks" checked> Links</label>
+                    <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="seoImages" checked> Bilder</label>
+                    <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="seoRobots" checked> robots.txt</label>
+                    <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="seoSitemap" checked> Sitemap</label>
+                    <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="seoSchema"> Schema.org</label>
+                    <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="seoSocial"> Social Tags</label>
+                    <label class="tool-item" style="padding:4px 8px;"><input type="checkbox" id="seoVitals"> Core Web Vitals</label>
+                </div>
+            </div>
+        </div>
+
+        <div class="section">
             <h3>Exploit-Modus</h3>
             <div class="profile-buttons">
                 <div class="profile-btn exploit-nein active" onclick="selectExploit('nein')">Nur identifizieren<br><span style="font-size:11px;color:#8b949e">Schwachstellen finden, nicht ausnutzen</span></div>
@@ -848,6 +889,36 @@ function generateCommand() {
         }
 
         command += '\nDokumentiere alle Schritte und Ergebnisse.\n';
+    }
+
+    // SEO-Analyse
+    const seoUrl = document.getElementById('seoUrl').value;
+    if (seoUrl) {
+        command += `\nSEO-Analyse: ${seoUrl}\n`;
+
+        const seoChecks = [];
+        if (document.getElementById('seoMeta').checked) seoChecks.push('Meta-Tags (Title, Description, Keywords, Canonical)');
+        if (document.getElementById('seoHeadings').checked) seoChecks.push('Heading-Struktur (H1-H6)');
+        if (document.getElementById('seoSSL').checked) seoChecks.push('SSL/HTTPS-Konfiguration');
+        if (document.getElementById('seoSpeed').checked) seoChecks.push('Ladezeit und Performance');
+        if (document.getElementById('seoMobile').checked) seoChecks.push('Mobile-Friendliness');
+        if (document.getElementById('seoLinks').checked) seoChecks.push('Interne/Externe Links und Broken Links');
+        if (document.getElementById('seoImages').checked) seoChecks.push('Bilder (Alt-Tags, Groesse)');
+        if (document.getElementById('seoRobots').checked) seoChecks.push('robots.txt');
+        if (document.getElementById('seoSitemap').checked) seoChecks.push('Sitemap.xml');
+        if (document.getElementById('seoSchema').checked) seoChecks.push('Schema.org / Strukturierte Daten');
+        if (document.getElementById('seoSocial').checked) seoChecks.push('Open Graph und Twitter Cards');
+        if (document.getElementById('seoVitals').checked) seoChecks.push('Core Web Vitals');
+        if (seoChecks.length > 0) command += `Pruefe: ${seoChecks.join(', ')}\n`;
+
+        const seoComp = document.getElementById('seoCompetitor').value;
+        if (seoComp) command += `Vergleich mit: ${seoComp}\n`;
+        const seoKw = document.getElementById('seoKeywords').value;
+        if (seoKw) command += `Ziel-Keywords: ${seoKw}\n`;
+        const seoAud = document.getElementById('seoAudience').value;
+        if (seoAud) command += `Zielgruppe: ${seoAud}\n`;
+
+        command += '\nErstelle einen strukturierten SEO-Bericht mit: Zusammenfassung, Ergebnisse pro Bereich, Probleme mit Schweregrad, Verbesserungen nach Prioritaet, Quick Wins.\n';
     }
 
     if (tools.length > 0) {

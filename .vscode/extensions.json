@@ -8,6 +8,7 @@
     "ms-azuretools.vscode-docker",
     "redhat.vscode-yaml",
     "github.copilot",
-    "eamodio.gitlens"
+    "eamodio.gitlens",
+    "ms-vscode.vscode-speech"
   ]
 }

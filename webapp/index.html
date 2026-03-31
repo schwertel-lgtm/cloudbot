@@ -190,6 +190,7 @@
     <button class="tab" onclick="switchTab('scan')">Scan</button>
     <button class="tab" onclick="switchTab('osint')">OSINT</button>
     <button class="tab" onclick="switchTab('set')">SE</button>
+    <button class="tab" onclick="switchTab('seo')">SEO</button>
 </div>
 
 <!-- BEFEHLE -->
@@ -483,6 +484,63 @@
     <button class="scan-btn" onclick="sendSet()">SE-Angriff vorbereiten</button>
 </div>
 
+<!-- SEO ANALYSE -->
+<div class="panel" id="panel-seo">
+    <h2>Analyse-Tiefe</h2>
+    <div class="profile-row">
+        <button class="profile-btn" onclick="selectSeoDepth(this, 'schnell')">Schnell</button>
+        <button class="profile-btn active" onclick="selectSeoDepth(this, 'normal')">Normal</button>
+        <button class="profile-btn" onclick="selectSeoDepth(this, 'komplett')">Komplett</button>
+    </div>
+
+    <h2>Webseite</h2>
+    <div class="form-group">
+        <label>URL / Domain</label>
+        <input type="text" id="seoUrl" placeholder="z.B. www.example.de">
+    </div>
+
+    <h2>Pruefbereiche</h2>
+    <div style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:12px;">
+        <button class="profile-btn seo-check active" onclick="toggleSeoCheck(this)" data-check="meta">Meta-Tags</button>
+        <button class="profile-btn seo-check active" onclick="toggleSeoCheck(this)" data-check="headings">Headings</button>
+        <button class="profile-btn seo-check active" onclick="toggleSeoCheck(this)" data-check="ssl">SSL/HTTPS</button>
+        <button class="profile-btn seo-check active" onclick="toggleSeoCheck(this)" data-check="speed">Ladezeit</button>
+        <button class="profile-btn seo-check active" onclick="toggleSeoCheck(this)" data-check="mobile">Mobile</button>
+        <button class="profile-btn seo-check active" onclick="toggleSeoCheck(this)" data-check="links">Links</button>
+        <button class="profile-btn seo-check active" onclick="toggleSeoCheck(this)" data-check="images">Bilder</button>
+        <button class="profile-btn seo-check active" onclick="toggleSeoCheck(this)" data-check="robots">robots.txt</button>
+        <button class="profile-btn seo-check active" onclick="toggleSeoCheck(this)" data-check="sitemap">Sitemap</button>
+        <button class="profile-btn seo-check" onclick="toggleSeoCheck(this)" data-check="schema">Schema.org</button>
+        <button class="profile-btn seo-check" onclick="toggleSeoCheck(this)" data-check="social">Social Tags</button>
+        <button class="profile-btn seo-check" onclick="toggleSeoCheck(this)" data-check="performance">Core Web Vitals</button>
+    </div>
+
+    <h2>Vergleich (optional)</h2>
+    <div class="form-group">
+        <label>Konkurrenz-URL</label>
+        <input type="text" id="seoCompetitor" placeholder="z.B. www.konkurrent.de">
+    </div>
+
+    <h2>Fokus (optional)</h2>
+    <div class="form-row">
+        <div class="form-group">
+            <label>Keywords</label>
+            <input type="text" id="seoKeywords" placeholder="z.B. Zahnarzt Berlin">
+        </div>
+        <div class="form-group">
+            <label>Zielgruppe</label>
+            <input type="text" id="seoAudience" placeholder="z.B. lokale Kunden">
+        </div>
+    </div>
+
+    <div class="form-group">
+        <label>Zusaetzliche Anweisungen</label>
+        <input type="text" id="seoExtra" placeholder="z.B. Fokus auf lokales SEO">
+    </div>
+
+    <button class="scan-btn" onclick="sendSeo()">SEO-Analyse starten</button>
+</div>
+
 <div class="sent-toast" id="toast">Gesendet!</div>
 
 <script>
@@ -494,6 +552,7 @@ let scanProfile = 'normal';
 let exploitMode = 'nein';
 let osintDepth = 'standard';
 let setMode = 'phishing';
+let seoDepth = 'normal';
 
 function switchTab(name) {
     document.querySelectorAll('.tab').forEach((t, i) => {
@@ -544,6 +603,16 @@ function selectSetMode(el, mode) {
     setMode = mode;
     document.querySelectorAll('#panel-set .profile-btn').forEach(b => b.classList.remove('active'));
     el.classList.add('active');
+}
+
+function selectSeoDepth(el, depth) {
+    seoDepth = depth;
+    el.parentElement.querySelectorAll('.profile-btn').forEach(b => b.classList.remove('active'));
+    el.classList.add('active');
+}
+
+function toggleSeoCheck(el) {
+    el.classList.toggle('active');
 }
 
 function val(id) { return document.getElementById(id).value.trim(); }
@@ -713,6 +782,62 @@ function sendSet() {
 
     msg += '\n\nDokumentiere alle Schritte und Ergebnisse.';
     msg += '\nSpeichere alle Ergebnisse in /root/data/scans/';
+
+    send(msg);
+}
+
+function sendSeo() {
+    const url = val('seoUrl');
+    if (!url) { alert('Bitte URL eingeben'); return; }
+
+    const depthLabels = { schnell: 'Schnellanalyse', normal: 'Standard-Analyse', komplett: 'Komplettanalyse' };
+    let msg = `SEO-Analyse (${depthLabels[seoDepth]}): ${url}\n`;
+
+    // Aktive Pruefbereiche sammeln
+    const checks = [];
+    document.querySelectorAll('.seo-check.active').forEach(el => checks.push(el.dataset.check));
+
+    const checkLabels = {
+        meta: 'Meta-Tags (Title, Description, Keywords, Canonical)',
+        headings: 'Heading-Struktur (H1-H6 Hierarchie)',
+        ssl: 'SSL/HTTPS-Konfiguration',
+        speed: 'Ladezeit und Performance',
+        mobile: 'Mobile-Friendliness und Responsive Design',
+        links: 'Interne/Externe Links und Broken Links',
+        images: 'Bilder (Alt-Tags, Groesse, Komprimierung)',
+        robots: 'robots.txt Analyse',
+        sitemap: 'Sitemap.xml Pruefung',
+        schema: 'Schema.org / Strukturierte Daten',
+        social: 'Open Graph und Twitter Cards',
+        performance: 'Core Web Vitals (LCP, FID, CLS)'
+    };
+
+    if (checks.length > 0) {
+        msg += '\nPruefe folgende Bereiche:';
+        checks.forEach(c => { msg += `\n- ${checkLabels[c] || c}`; });
+    }
+
+    const competitor = val('seoCompetitor');
+    if (competitor) msg += `\n\nVergleich mit Konkurrenz: ${competitor}`;
+
+    const keywords = val('seoKeywords');
+    if (keywords) msg += `\nZiel-Keywords: ${keywords}`;
+
+    const audience = val('seoAudience');
+    if (audience) msg += `\nZielgruppe: ${audience}`;
+
+    const extra = val('seoExtra');
+    if (extra) msg += `\n\n${extra}`;
+
+    msg += '\n\nFuehre die Analyse mit den verfuegbaren Tools durch (curl, whatweb, sslyze, nikto etc.).';
+    msg += '\n\nErstelle einen strukturierten SEO-Bericht mit:';
+    msg += '\n1. ZUSAMMENFASSUNG: Gesamtbewertung (Score oder Ampel)';
+    msg += '\n2. ERGEBNISSE: Detaillierte Analyse pro Bereich';
+    msg += '\n3. PROBLEME: Gefundene SEO-Fehler mit Schweregrad';
+    msg += '\n4. VERBESSERUNGEN: Konkrete Massnahmen sortiert nach Prioritaet';
+    msg += '\n5. QUICK WINS: Sofort umsetzbare Optimierungen';
+
+    msg += '\n\nSpeichere den Bericht in /root/data/scans/';
 
     send(msg);
 }
