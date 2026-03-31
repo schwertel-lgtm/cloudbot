@@ -378,6 +378,7 @@ async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return
 
         # Freitext -> KI
+        await update.effective_message.reply_text("Ok Chef, bin dran...")
         response = await process_message(data, chat_id)
         if response:
             while response:
@@ -398,6 +399,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not user_text:
         return
     try:
+        await update.message.reply_text("Ok Chef, bin dran...")
         response = await process_message(user_text, update.effective_chat.id)
         if response:
             while response:
