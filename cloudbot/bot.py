@@ -22,7 +22,12 @@ from audit_log import (
     log_blocked_command,
     get_recent_logs,
 )
-from ai_agent import process_message
+from ai_agent import process_message, SEO_KEYWORDS
+
+try:
+    from seo_report import generate_seo_pdf
+except ImportError:
+    generate_seo_pdf = None
 
 TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 
@@ -165,7 +170,7 @@ async def cmd_exec(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         container = client.containers.get(name)
-        result = container.exec_run(command, demux=True)
+        result = container.exec_run(["bash", "-c", command], demux=True)
         stdout = result.output[0].decode("utf-8", errors="replace") if result.output[0] else ""
         stderr = result.output[1].decode("utf-8", errors="replace") if result.output[1] else ""
         output = stdout + stderr
@@ -378,13 +383,17 @@ async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return
 
         # Freitext -> KI
+        is_seo = _is_seo_request(data)
         await update.effective_message.reply_text("Ok Chef, bin dran...")
         response = await process_message(data, chat_id)
         if response:
+            full_response = response
             while response:
                 chunk = response[:4000]
                 response = response[4000:]
                 await update.effective_message.reply_text(chunk)
+            if is_seo:
+                await _send_seo_pdf(update.effective_message, full_response, data)
     except Exception as e:
         logger.error("Webapp-Fehler: %s", e, exc_info=True)
         try:
@@ -393,19 +402,48 @@ async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
             pass
 
 
+def _is_seo_request(text):
+    """Prueft ob die Nachricht eine SEO-Analyse anfordert."""
+    text_lower = text.lower()
+    return any(kw in text_lower for kw in SEO_KEYWORDS)
+
+
+async def _send_seo_pdf(message, response_text, user_text):
+    """Generiert und sendet ein SEO-PDF wenn es eine SEO-Analyse war."""
+    if not generate_seo_pdf:
+        logger.warning("PDF-Generierung nicht verfuegbar (fpdf2 fehlt)")
+        return
+    try:
+        pdf_path = generate_seo_pdf(response_text)
+        with open(pdf_path, "rb") as f:
+            await message.reply_document(
+                document=f,
+                filename=os.path.basename(pdf_path),
+                caption="SEO-Analyse als PDF-Bericht"
+            )
+        log_action(message.chat.id, "seo_pdf", user_text[:50], pdf_path, True)
+    except Exception as e:
+        logger.error("PDF-Fehler: %s", e, exc_info=True)
+        await message.reply_text(f"PDF konnte nicht erstellt werden: {str(e)[:200]}")
+
+
 @authorized
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_text = update.message.text
     if not user_text:
         return
+    is_seo = _is_seo_request(user_text)
     try:
         await update.message.reply_text("Ok Chef, bin dran...")
         response = await process_message(user_text, update.effective_chat.id)
         if response:
+            full_response = response
             while response:
                 chunk = response[:4000]
                 response = response[4000:]
                 await update.message.reply_text(chunk)
+            if is_seo:
+                await _send_seo_pdf(update.message, full_response, user_text)
     except Exception as e:
         await update.message.reply_text(f"Fehler: {str(e)[:500]}")
         log_action(update.effective_chat.id, "ai_chat", user_text[:100], str(e)[:200], False)

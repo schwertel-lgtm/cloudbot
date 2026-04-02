@@ -1,0 +1,13 @@
+{
+	"folders": [
+		{
+			"path": ".."
+		},
+		{
+			"path": "../../Hobby"
+		}
+	],
+	"settings": {
+		"accessibility.voice.speechLanguage": "de-DE"
+	}
+}
