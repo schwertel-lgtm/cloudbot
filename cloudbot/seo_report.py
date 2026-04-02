@@ -81,7 +81,7 @@ class SEOReport(FPDF):
         self.ln(4)
         self.set_font("Helvetica", "B", 14)
         self.set_text_color(0, 80, 160)
-        self.cell(0, 10, title)
+        self.cell(0, 10, self._safe(title))
         self.ln(8)
         self.set_draw_color(0, 120, 200)
         self.set_line_width(0.3)
@@ -95,25 +95,45 @@ class SEOReport(FPDF):
         self.ln(2)
         self.set_font("Helvetica", "B", 11)
         self.set_text_color(60, 60, 60)
-        self.cell(0, 7, title)
+        self.cell(0, 7, self._safe(title))
         self.ln(6)
+
+    @staticmethod
+    def _safe(text):
+        """Entfernt alle Zeichen die fpdf/Helvetica nicht darstellen kann."""
+        replacements = {
+            "\u2714": "[OK]", "\u2705": "[OK]", "\u2611": "[OK]",
+            "\u2716": "[X]", "\u274c": "[X]", "\u2612": "[X]",
+            "\u26a0": "[!]", "\u26a0\ufe0f": "[!]",
+            "\u2b50": "*", "\u2b50\ufe0f": "*",
+            "\u2022": "-", "\u25cf": "-", "\u25cb": "-",
+            "\u2013": "-", "\u2014": "-", "\u2015": "-",
+            "\u201e": "\"", "\u201c": "\"", "\u201d": "\"",
+            "\u2018": "'", "\u2019": "'",
+            "\u2192": "->", "\u2190": "<-",
+            "\u2713": "[OK]", "\u2717": "[X]",
+            "\U0001f534": "[!!]", "\U0001f7e0": "[!]",
+            "\U0001f7e2": "[OK]", "\U0001f7e1": "[!]",
+            "\U0001f680": "", "\U0001f4ca": "", "\U0001f4a1": "",
+            "\ufe0f": "",
+        }
+        for char, repl in replacements.items():
+            text = text.replace(char, repl)
+        # Alle verbleibenden Non-Latin1 Zeichen entfernen
+        result = []
+        for ch in text:
+            try:
+                ch.encode("latin-1")
+                result.append(ch)
+            except UnicodeEncodeError:
+                pass
+        return "".join(result)
 
     def _add_text(self, text):
         """Fuegt normalen Text hinzu."""
         self.set_font("Helvetica", "", 10)
         self.set_text_color(40, 40, 40)
-        # Sonderzeichen ersetzen die fpdf nicht kann
-        text = text.replace("\u2714", "[OK]")
-        text = text.replace("\u2716", "[X]")
-        text = text.replace("\u26a0", "[!]")
-        text = text.replace("\u2b50", "*")
-        text = text.replace("\u2022", "-")
-        text = text.replace("\u25cf", "-")
-        text = text.replace("\u2013", "-")
-        text = text.replace("\u2014", "-")
-        text = text.replace("\u201e", "\"")
-        text = text.replace("\u201c", "\"")
-        text = text.replace("\u201d", "\"")
+        text = self._safe(text)
         self.multi_cell(0, 5, text)
         self.ln(2)
 
@@ -128,8 +148,7 @@ class SEOReport(FPDF):
         else:
             self.set_text_color(40, 40, 40)
         self.set_font("Helvetica", "", 10)
-        text = text.replace("\u2714", "[OK]").replace("\u2716", "[X]")
-        text = text.replace("\u26a0", "[!]").replace("\u2022", "-")
+        text = self._safe(text)
         self.cell(8, 5, "-")
         self.multi_cell(0, 5, text)
         self.ln(1)
@@ -141,7 +160,7 @@ class SEOReport(FPDF):
         self.set_fill_color(240, 240, 240)
         self.set_text_color(40, 40, 40)
         for line in code.strip().split("\n"):
-            self.cell(0, 5, "  " + line, fill=True)
+            self.cell(0, 5, "  " + self._safe(line), fill=True)
             self.ln(4)
         self.ln(3)
         self.set_font("Helvetica", "", 10)

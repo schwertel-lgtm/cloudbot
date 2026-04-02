@@ -103,5 +103,5 @@ def sanitize_output(text: str) -> str:
     # Telegram Bot Tokens
     text = re.sub(r"\b\d+:[A-Za-z0-9_-]{35,}\b", "[TOKEN ENTFERNT]", text)
     # Passwoerter in Umgebungsvariablen
-    text = re.sub(r"(?i)(password|passwd|secret|token|key)\s*[=:]\s*\S+", r"\1=[ENTFERNT]", text)
+    text = re.sub(r"(?i)(password|passwd|secret|token|key)\s*[=:]\s*(?!\[ENTFERNT\])\S+", r"\1=[ENTFERNT]", text)
     return text

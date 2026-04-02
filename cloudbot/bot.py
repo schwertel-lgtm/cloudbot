@@ -245,26 +245,36 @@ async def cmd_download(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         container = client.containers.get(container_name)
-        archive, _ = container.get_archive(filepath)
-        # tar-Archiv entpacken
-        tar_data = b"".join(archive)
-        tar_stream = io.BytesIO(tar_data)
-        with tarfile.open(fileobj=tar_stream) as tar:
-            member = tar.getmembers()[0]
-            if member.isfile():
-                f = tar.extractfile(member)
-                file_data = f.read()
-                filename = os.path.basename(filepath)
-                await update.message.reply_document(
-                    document=io.BytesIO(file_data),
-                    filename=filename,
-                    caption=f"Datei von {container_name}:{filepath}"
-                )
-                log_action(update.effective_chat.id, "download", filepath, f"{len(file_data)} bytes", True)
-            else:
-                await update.message.reply_text(f"'{filepath}' ist ein Verzeichnis. Nutze /files um Dateien aufzulisten.")
+        try:
+            archive, _ = container.get_archive(filepath)
+            tar_data = b"".join(archive)
+            tar_stream = io.BytesIO(tar_data)
+            with tarfile.open(fileobj=tar_stream) as tar:
+                member = tar.getmembers()[0]
+                if member.isfile():
+                    f = tar.extractfile(member)
+                    file_data = f.read()
+                else:
+                    await update.message.reply_text(f"'{filepath}' ist ein Verzeichnis. Nutze /files um Dateien aufzulisten.")
+                    return
+        except docker.errors.NotFound:
+            # Fallback fuer tmpfs-Pfade: Datei per cat lesen
+            result = container.exec_run(["bash", "-c", f"cat '{filepath}'"], demux=True)
+            stdout = result.output[0] if result.output[0] else b""
+            if not stdout:
+                await update.message.reply_text(f"Datei nicht gefunden: {filepath}")
+                log_action(update.effective_chat.id, "download", filepath, "nicht gefunden", False)
+                return
+            file_data = stdout
+        filename = os.path.basename(filepath)
+        await update.message.reply_document(
+            document=io.BytesIO(file_data),
+            filename=filename,
+            caption=f"Datei von {container_name}:{filepath}"
+        )
+        log_action(update.effective_chat.id, "download", filepath, f"{len(file_data)} bytes", True)
     except docker.errors.NotFound:
-        await update.message.reply_text(f"Datei oder Container nicht gefunden: {filepath}")
+        await update.message.reply_text(f"Container '{container_name}' nicht gefunden.")
         log_action(update.effective_chat.id, "download", filepath, "nicht gefunden", False)
     except Exception as e:
         await update.message.reply_text(f"Fehler beim Download: {str(e)[:300]}")
