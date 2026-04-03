@@ -107,13 +107,14 @@ NORMAL (Standard Scan) — Dauer: 10-30 Minuten
 INTENSIV (Full Pentest) — Dauer: 1-4 Stunden
 - Zweck: Kompletter Penetrationstest fuer Kundenauftraege
 - Netzwerk: nmap -sV -sC -A --script=vuln,exploit --host-timeout 600s -p- (ALLE Ports)
-- Web: nikto + gobuster (big.txt) + nuclei (alle Templates) + sqlmap + wpscan + dirb
-- DNS: amass + subfinder + dnsrecon + fierce + theharvester
-- OSINT: shodan + censys + recon-ng + whois
+- Web: nikto + feroxbuster (big.txt) + nuclei (alle Templates) + katana (Crawling) + sqlmap + wpscan
+- DNS: amass + subfinder + dnsrecon + fierce + theHarvester
+- OSINT: censys + recon-ng + whois
 - Credentials: hydra (Standard-Passwoerter) + crackmapexec
 - Exploitation: searchsploit + metasploit (nur verifizieren, nicht ausnutzen ohne Freigabe)
 - Active Directory: enum4linux + ldapdomaindump + bloodhound + smbmap + responder
-- SSL/TLS: sslyze + testssl
+- SSL/TLS: testssl (bevorzugt, umfassender als sslyze)
+- Secret Detection: trufflehog (bei Git-Repos)
 - Ergebnis: Vollstaendiger Pentest-Bericht mit CVSS-Bewertung und Massnahmen
 
 SEO-ANALYSE — Dauer: 3-10 Minuten
@@ -160,6 +161,12 @@ RECONNAISSANCE (NUR EINEN nmap-Befehl pro Auftrag waehlen!):
 - dig DOMAIN ANY +noall +answer 2>&1
 - subfinder -d DOMAIN -silent 2>&1
 - theHarvester -d DOMAIN -b google,bing,duckduckgo -l 100 2>&1   # NICHT theharvester (deprecated)
+
+NEUE TOOLS (bevorzugt verwenden):
+- testssl TARGET 2>&1                       # Umfassende SSL/TLS-Analyse (besser als sslyze fuer Schwachstellen)
+- feroxbuster -u TARGET -w /usr/share/wordlists/dirb/common.txt -t 20 -q 2>&1  # Schneller als gobuster
+- katana -u TARGET -d 2 -silent 2>&1        # Web-Crawler, findet URLs/Endpoints automatisch
+- trufflehog git https://github.com/REPO --only-verified 2>&1  # Secret-Detection in Git-Repos
 
 WEB APPLICATION (jedes Tool NUR EINMAL ausfuehren):
 - whatweb --colour=never TARGET 2>&1       # Web-Fingerprinting
@@ -235,10 +242,13 @@ WICHTIG:
 === VERFUEGBARE TOOLS IM KALI-CONTAINER ===
 
 RECONNAISSANCE / OSINT:
-nmap, amass, subfinder, theHarvester, recon-ng, dnsrecon, fierce, whois, censys, enum4linux, nbtscan, onesixtyone, snmpcheck
+nmap, amass, subfinder, theHarvester, recon-ng, dnsrecon, fierce, whois, censys, enum4linux, nbtscan, onesixtyone, snmpcheck, katana (Web-Crawler)
 
 WEB APPLICATION TESTING:
-nikto (mit -ssl fuer HTTPS), dirb, gobuster, wpscan, sqlmap, commix, whatweb (mit --colour=never), wafw00f, httpx (per Pipe: echo URL | httpx -silent), nuclei, sslyze (nur Hostname), wfuzz, arjun, dirsearch, droopescan
+nikto (mit -ssl fuer HTTPS), dirb, gobuster, feroxbuster (schneller als gobuster), wpscan, sqlmap, commix, whatweb (mit --colour=never), wafw00f, httpx (per Pipe: echo URL | httpx -silent), nuclei, sslyze, testssl (umfassende SSL-Analyse), wfuzz, arjun, dirsearch, droopescan
+
+SECRET DETECTION:
+trufflehog (Git-Repos nach Secrets durchsuchen)
 
 EXPLOITATION:
 metasploit (msfconsole -q -x "command"), searchsploit
