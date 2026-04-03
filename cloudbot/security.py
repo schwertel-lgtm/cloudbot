@@ -5,8 +5,15 @@ Alle Validierungen und Sicherheitsregeln an einem Ort.
 
 import os
 import re
+import time
+from collections import defaultdict
 
 ALLOWED_CHAT_ID = int(os.environ["TELEGRAM_CHAT_ID"])
+
+# Rate-Limiting: max Nachrichten pro Zeitfenster
+RATE_LIMIT_MAX = 10          # max 10 Nachrichten
+RATE_LIMIT_WINDOW = 60       # pro 60 Sekunden
+_rate_limiter = defaultdict(list)
 
 # Whitelist erlaubter Container-Namen
 ALLOWED_CONTAINERS = {"kali", "cloudbot", "nordvpn"}
@@ -52,10 +59,15 @@ BLOCKED_COMMANDS = [
     r"\bshutdown\b",
     r"\breboot\b",
 
-    # Code-Injection
+    # Code-Injection / Interpreter-Systemaufrufe
     r"\beval\b",
     r"\bexec\b.*\(",
     r"`.*`",
+    r"\bperl\b.*\b(system|exec)\s*\(",
+    r"\bruby\b.*\b(system|exec|spawn)\s*\(",
+    r"\bpython[23]?\b.*\b(os\.system|subprocess|os\.exec)",
+    r"\bphp\b.*\b(system|exec|passthru|shell_exec)\s*\(",
+    r"\blua\b.*\bos\.execute\b",
 
     # Crypto-Mining
     r"\bxmrig\b",
@@ -73,6 +85,19 @@ _compiled_patterns = [re.compile(p, re.IGNORECASE) for p in BLOCKED_COMMANDS]
 
 def is_authorized(chat_id: int) -> bool:
     return chat_id == ALLOWED_CHAT_ID
+
+
+def check_rate_limit(chat_id: int) -> tuple[bool, str]:
+    """Prueft ob die Chat-ID das Rate-Limit ueberschreitet.
+    Gibt (True, '') zurueck wenn ok, (False, Meldung) wenn Limit erreicht."""
+    now = time.time()
+    timestamps = _rate_limiter[chat_id]
+    # Alte Eintraege entfernen
+    _rate_limiter[chat_id] = [t for t in timestamps if now - t < RATE_LIMIT_WINDOW]
+    if len(_rate_limiter[chat_id]) >= RATE_LIMIT_MAX:
+        return False, f"Rate-Limit erreicht ({RATE_LIMIT_MAX} Nachrichten pro {RATE_LIMIT_WINDOW}s). Bitte warten."
+    _rate_limiter[chat_id].append(now)
+    return True, ""
 
 
 def validate_container_name(name: str) -> tuple[bool, str]:

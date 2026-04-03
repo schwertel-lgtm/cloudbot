@@ -12,6 +12,7 @@ logger = logging.getLogger(__name__)
 from security import (
     ALLOWED_CHAT_ID,
     is_authorized,
+    check_rate_limit,
     validate_container_name,
     validate_exec_command,
     sanitize_output,
@@ -41,6 +42,10 @@ def authorized(func):
             username = update.effective_user.username or "unbekannt"
             log_unauthorized(chat_id, username, func.__name__)
             await update.message.reply_text("Nicht autorisiert.")
+            return
+        allowed, msg = check_rate_limit(chat_id)
+        if not allowed:
+            await update.message.reply_text(msg)
             return
         return await func(update, context)
     return wrapper
@@ -355,7 +360,13 @@ async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
     try:
         chat_id = update.effective_chat.id
         if not is_authorized(chat_id):
-            logger.warning("Webapp: Unautorisierter Zugriff von %s", chat_id)
+            username = update.effective_user.username or "unbekannt"
+            log_unauthorized(chat_id, username, "webapp")
+            await update.effective_message.reply_text("Nicht autorisiert.")
+            return
+        allowed, msg = check_rate_limit(chat_id)
+        if not allowed:
+            await update.effective_message.reply_text(msg)
             return
 
         data = update.effective_message.web_app_data.data
