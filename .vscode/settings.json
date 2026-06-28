@@ -1,10 +1,16 @@
 {
-  "python.defaultInterpreterPath": "python",
   "python.analysis.typeCheckingMode": "basic",
   "editor.formatOnSave": true,
   "[python]": {
     "editor.defaultFormatter": "ms-python.black-formatter",
     "editor.tabSize": 4
   },
-  "accessibility.voice.speechLanguage": "de-DE"
+  "accessibility.voice.speechLanguage": "de-DE",
+  "python-envs.pythonProjects": [
+    {
+      "path": "Schichtkalender",
+      "envManager": "ms-python.python:venv",
+      "packageManager": "ms-python.python:pip"
+    }
+  ]
 }

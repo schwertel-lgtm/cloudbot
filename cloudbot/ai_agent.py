@@ -12,7 +12,7 @@ from security import validate_exec_command, validate_container_name, sanitize_ou
 from audit_log import log_action, log_blocked_command
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-MODEL = "claude-sonnet-4-20250514"
+MODEL = "claude-sonnet-4-6"
 
 # Scan-Profile: (max_steps, timeout_gesamt, timeout_pro_befehl)
 SCAN_PROFILES = {
