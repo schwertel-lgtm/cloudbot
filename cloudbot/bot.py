@@ -420,6 +420,10 @@ async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await update.effective_message.reply_text(msg)
             return
 
+        if _already_processed(update.update_id):
+            logger.info("Doppeltes Webapp-Update %s verworfen (Re-Auslieferung)", update.update_id)
+            return
+
         data = update.effective_message.web_app_data.data
         logger.info("Webapp-Daten empfangen: %s", data[:100])
         log_action(chat_id, "webapp", data[:100], "empfangen", True)
@@ -499,8 +503,40 @@ async def _send_seo_pdf(message, response_text, user_text):
         await message.reply_text(f"PDF konnte nicht erstellt werden: {str(e)[:200]}")
 
 
+# === Update-Deduplizierung gegen Mehrfachantworten ===
+# Hintergrund (Belegfall 2026-06-28): Ein KI-Lauf dauert teils >3 Min
+# (Agent-Loop mit vielen Schritten). So lange blockiert der Handler.
+# Telegram liefert ein Update nach Timeout ERNEUT aus, wenn es nicht
+# zuegig bestaetigt wird -> derselbe Text wird 2-3x verarbeitet ->
+# doppelte/dreifache Antwort. drop_pending_updates greift nur beim Start,
+# nicht gegen Re-Auslieferung waehrend eines laufenden Handlers.
+#
+# Fix: jede update_id genau einmal verarbeiten. Wiederholte Auslieferungen
+# desselben Updates werden sofort verworfen (vor "Ok Chef..." und vor dem
+# KI-Aufruf). FIFO-begrenzt, damit die Menge nicht unbegrenzt waechst.
+
+_processed_updates: set[int] = set()
+_processed_order: list[int] = []
+_PROCESSED_MAX = 1000
+
+
+def _already_processed(update_id: int) -> bool:
+    """True, wenn diese update_id schon gesehen wurde. Markiert sie sonst."""
+    if update_id in _processed_updates:
+        return True
+    _processed_updates.add(update_id)
+    _processed_order.append(update_id)
+    if len(_processed_order) > _PROCESSED_MAX:
+        oldest = _processed_order.pop(0)
+        _processed_updates.discard(oldest)
+    return False
+
+
 @authorized
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if _already_processed(update.update_id):
+        logger.info("Doppeltes Update %s verworfen (Re-Auslieferung)", update.update_id)
+        return
     user_text = update.message.text
     if not user_text:
         return
