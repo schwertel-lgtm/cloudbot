@@ -1,12 +1,63 @@
 import os
 import io
+import re
 import tarfile
 import logging
 import docker
 from telegram import Update, WebAppInfo, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
+# === Logging-Setup mit Token-Schutz ===
+# Hintergrund: Bis 2026-04-21 wurde der Telegram-Bot-Token im Klartext in
+# den Container-Logs sichtbar, weil httpx (transitiv via PTB) jeden
+# Request inkl. URL auf INFO-Level loggt — und Telegram-API-URLs
+# enthalten den Token im Pfad.
+#
+# Zwei Verteidigungslinien:
+#   (a) Bekannte HTTP-/Telegram-Logger auf WARNING runter — silent in der
+#       Standard-Operation.
+#   (b) TokenScrubFilter als Sicherheitsnetz: scrubbt das Token-Pattern
+#       \b\d+:[A-Za-z0-9_-]{35,}\b in JEDER Log-Message, falls in Zukunft
+#       ein neuer HTTP-Client oder DEBUG-Level eingeschaltet wird.
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+
+for _noisy in ("httpx", "httpcore", "telegram", "telegram.ext", "telegram.bot", "urllib3"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
+
+
+class TokenScrubFilter(logging.Filter):
+    """Scrubbt Telegram-Bot-Token aus Log-Messages (Defense-in-Depth).
+
+    Pattern bewusst OHNE `\\b`-Wort-Grenze davor: Telegram-API-URLs
+    enthalten den Token in der Form `bot<n>:<35+chars>` — `\\b` zwischen
+    `bot` und `<n>` matcht nicht, weil beides Word-Chars sind. Das
+    Pattern `\\d+:[A-Za-z0-9_-]{35,}` ist spezifisch genug, um keine
+    False-Positives in Timestamps oder kurzen ID-Strings zu erzeugen
+    (35+-char-Hash hinter Doppelpunkt ist extrem ungewoehnlich).
+    """
+
+    _pat = re.compile(r"\d+:[A-Za-z0-9_-]{35,}")
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.msg, str):
+            record.msg = self._pat.sub("[TOKEN]", record.msg)
+        if record.args:
+            record.args = tuple(
+                self._pat.sub("[TOKEN]", str(a)) if isinstance(a, str) else a
+                for a in record.args
+            )
+        return True
+
+
+# Filter MUSS auf die Handler, nicht auf den Logger — sonst greift er
+# nicht auf propagierte Records von child-Loggern wie httpx/telegram.
+# (Stdlib-Logging-Eigenheit: Logger-Filter laufen vor Propagation,
+# Handler-Filter laufen am tatsaechlichen Output-Punkt.)
+_scrub_filter = TokenScrubFilter()
+for _h in logging.getLogger().handlers:
+    _h.addFilter(_scrub_filter)
+
 logger = logging.getLogger(__name__)
 
 from security import (
@@ -489,7 +540,11 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     logger.info("Cloudbot laeuft... (mit KI + Mini App)")
     logger.info("WEBAPP_URL: %s", WEBAPP_URL or "NICHT GESETZT")
-    app.run_polling()
+    # drop_pending_updates=True: verwirft beim Start alte/aufgestaute Updates.
+    # Schuetzt gegen doppelte Berichte nach Neustart oder nach einem
+    # kurzzeitigen Zwei-Instanzen-getUpdates-Konflikt (Telegram liefert dann
+    # gestaute Updates sonst an die ueberlebende Instanz erneut aus).
+    app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
