@@ -5,3 +5,6 @@ venv/
 .venv/
 *.log
 .claude/
+# Lokale Backup-Dateien nie committen (enthalten ggf. alte Secrets/Token-Reste)
+*.bak
+*.bak-*

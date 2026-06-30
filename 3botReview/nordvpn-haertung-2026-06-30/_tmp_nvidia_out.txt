@@ -1,0 +1,4 @@
+usage: nvidia_review.py [-h] [--diff] [--staged] [--changed] [--all-dirty]
+                        [--setup] [--brief]
+                        [files ...]
+nvidia_review.py: error: unrecognized arguments: --effort --fresh --context 3botReview/nordvpn-haertung-2026-06-30/BRIEFING.md nordvpn/entrypoint.sh cloudbot/bot.py docker-compose.yml

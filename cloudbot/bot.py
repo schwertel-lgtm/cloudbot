@@ -1,6 +1,8 @@
 import os
 import io
 import re
+import socket
+import asyncio
 import tarfile
 import logging
 import docker
@@ -557,8 +559,71 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         log_action(update.effective_chat.id, "ai_chat", user_text[:100], str(e)[:200], False)
 
 
+# === Konnektivitaets-Waechter gegen Namespace-Verwaisung ===
+# Hintergrund (Belegfall 2026-06-30): Der Bot laeuft mit
+# network_mode: service:nordvpn und ist an den Netz-Namespace des
+# nordvpn-Containers ZUM START-ZEITPUNKT gebunden. Startet nordvpn neu
+# (z.B. nach Daemon-Tod), haengt der Bot am alten, toten Namespace:
+# "Network is unreachable" zu allem, "Temporary failure in name
+# resolution". Der nordvpn-Container kann den Bot nicht neu starten
+# (kein Docker-Socket-Zugriff). Loesung: Der Bot prueft selbst seine
+# Netz-Konnektivitaet und beendet sich bei anhaltendem Verlust ->
+# Docker (restart: unless-stopped) startet ihn mit frischer
+# Namespace-Bindung neu.
+#
+# Schwelle bewusst tolerant (3x60s): kurze NordLynx-Serverwechsel sollen
+# KEINEN Neustart ausloesen, nur ein echter, anhaltender Verlust.
+
+_WATCHDOG_INTERVAL = 60          # Sekunden zwischen Checks
+_WATCHDOG_MAX_FAILURES = 3       # so viele Fehlschlaege in Folge -> Neustart
+_WATCHDOG_PROBE_HOST = "api.telegram.org"  # muss erreichbar sein, damit der Bot arbeitet
+
+
+def _connectivity_ok() -> bool:
+    """True, wenn der Bot Namen aufloesen + eine TCP-Verbindung oeffnen kann.
+
+    DNS-Aufloesung + TCP-Connect zu Telegram pruefen Namespace-Bindung,
+    Tunnel und DNS in einem billigen Check — genau die Kette, die beim
+    Namespace-Verwaisungs-Ausfall reisst.
+    """
+    try:
+        ip = socket.gethostbyname(_WATCHDOG_PROBE_HOST)
+        with socket.create_connection((ip, 443), timeout=10):
+            return True
+    except OSError:
+        return False
+
+
+async def _connectivity_watchdog():
+    failures = 0
+    while True:
+        await asyncio.sleep(_WATCHDOG_INTERVAL)
+        ok = await asyncio.to_thread(_connectivity_ok)
+        if ok:
+            if failures:
+                logger.info("Konnektivitaet wiederhergestellt (nach %d Fehlschlaegen).", failures)
+            failures = 0
+            continue
+        failures += 1
+        logger.warning(
+            "Konnektivitaets-Check fehlgeschlagen (%d/%d) — moegliche Namespace-Verwaisung.",
+            failures, _WATCHDOG_MAX_FAILURES,
+        )
+        if failures >= _WATCHDOG_MAX_FAILURES:
+            logger.error(
+                "Netzwerk anhaltend tot — Bot beendet sich fuer frischen "
+                "Namespace-Neustart durch Docker (restart: unless-stopped)."
+            )
+            os._exit(1)
+
+
+async def _post_init(app: Application) -> None:
+    """Startet den Konnektivitaets-Waechter im laufenden Event-Loop."""
+    app.create_task(_connectivity_watchdog())
+
+
 def main():
-    app = Application.builder().token(TOKEN).build()
+    app = Application.builder().token(TOKEN).post_init(_post_init).build()
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("stop", cmd_stop))

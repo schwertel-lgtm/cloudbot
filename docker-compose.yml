@@ -2,7 +2,13 @@ version: "3.8"
 
 services:
   nordvpn:
-    build: ./nordvpn
+    # network: host beim BUILD (nicht Laufzeit!): das Docker-Bridge-Build-Netz
+    # auf der Synology hat unzuverlaessiges DNS -> apt-get update scheitert.
+    # Der Host loest sauber auf. Laufzeit-Netz bleibt unveraendert (eigener
+    # Namespace mit VPN). Belegfall 2026-06-30.
+    build:
+      context: ./nordvpn
+      network: host
     container_name: nordvpn
     restart: unless-stopped
     cap_add:
@@ -20,12 +26,22 @@ services:
     sysctls:
       - net.ipv6.conf.all.disable_ipv6=1
     mem_limit: 512m
+    # Haerter Tunnel-Check (2026-06-30): Der alte Check `curl ifconfig.me`
+    # bewies nur "Internet erreichbar" — er war heute GRUEN, obwohl der
+    # VPN-Daemon tot und der Tunnel weg war (Traffic lief ueber die
+    # Bridge-Route). Jetzt wird der echte VPN-Status geprueft: "Connected".
+    # WICHTIG: `^Status: Connected` praezise verankert + LC_ALL=C — ein
+    # blosses grep "Connected" wuerde auch "Disconnected" als Substring
+    # matchen (Cross-Review-MUSS 2026-06-30). start_period grosszuegig,
+    # damit der initiale Daemon-Start + Login + Connect nicht verfrueht als
+    # unhealthy gilt (sonst Deadlock fuer die service_healthy-gegateten
+    # kali/cloudbot). interval/retries kuerzer fuer schnellere Erkennung.
     healthcheck:
-      test: ["CMD-SHELL", "curl -s --max-time 10 ifconfig.me || exit 1"]
-      interval: 60s
-      timeout: 15s
+      test: ["CMD-SHELL", "LC_ALL=C nordvpn status 2>/dev/null | grep -qE '^Status: Connected' || exit 1"]
+      interval: 30s
+      timeout: 10s
       retries: 3
-      start_period: 30s
+      start_period: 60s
 
   kali:
     build: ./kali
