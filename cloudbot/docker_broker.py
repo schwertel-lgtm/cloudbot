@@ -151,8 +151,7 @@ def _dispatch(client: Any, operation: str, params: dict[str, Any]) -> Any:
             raise DockerBrokerError("EXEC_TIMEOUT")
         return result
     if operation == "vpn_status":
-        result = _exec(client.containers.get("nordvpn"), ["nordvpn", "status"])
-        return result["stdout"] or result["stderr"] or "(keine Ausgabe)"
+        return _exec(client.containers.get("nordvpn"), ["nordvpn", "status"])
     if operation == "list_files":
         result = _exec(client.containers.get("kali"), ["find", _path(params["path"]), "-maxdepth", "2", "-type", "f", "-printf", "%s %p\n"])
         return result["stdout"]

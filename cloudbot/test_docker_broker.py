@@ -63,7 +63,7 @@ class BrokerContractTest(unittest.TestCase):
         result = docker_broker._dispatch(client, "vpn_status", {})
         client.containers.get.assert_called_with("nordvpn")
         container.exec_run.assert_called_once_with(["nordvpn", "status"], demux=True)
-        self.assertEqual("Status: Connected", result)
+        self.assertEqual("Status: Connected", result["stdout"])
 
     def test_download_tmpfs_fallback_uses_fixed_bounded_argv(self):
         client = MagicMock()
