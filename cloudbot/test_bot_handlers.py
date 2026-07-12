@@ -12,31 +12,15 @@ from docker_broker_client import DockerBrokerError, ExecResult
 
 
 class BrokerHandlerTest(unittest.IsolatedAsyncioTestCase):
-    def test_stage1_webapp_url_remains_unchanged(self):
-        configured = bot._configured_webapp_url(
+    def test_webapp_url_gets_contract_cache_buster_without_losing_url_parts(self):
+        versioned = bot._versioned_webapp_url(
             "https://dashboard.example/app?theme=dark&cloudbot_contract=old#panel"
         )
         self.assertEqual(
-            "https://dashboard.example/app?theme=dark&cloudbot_contract=old#panel",
-            configured,
+            "https://dashboard.example/app?theme=dark&cloudbot_contract=ai-request-v2#panel",
+            versioned,
         )
-        self.assertEqual("", bot._configured_webapp_url(""))
-
-    def test_live_v0_freetext_is_temporarily_normalized_to_auto(self):
-        request, source = bot._parse_webapp_ai_request("Profil: schnell\n\nAnalysiere example.de")
-        self.assertEqual("Profil: schnell\n\nAnalysiere example.de", request.message)
-        self.assertEqual("auto", request.model)
-        self.assertEqual("legacy_v0", source)
-
-    def test_v0_bridge_rejects_empty_oversized_and_json_shaped_failures(self):
-        invalid = (
-            "", "   ", "x" * (bot.WEBAPP_DATA_MAX_BYTES + 1),
-            "{", "[", "{not-json", "[1, 2]",
-            '{"type":"ai_request"}',
-        )
-        for data in invalid:
-            with self.subTest(data=data[:30]), self.assertRaises(ValueError):
-                bot._parse_webapp_ai_request(data)
+        self.assertEqual("", bot._versioned_webapp_url(""))
 
     def test_ai_request_contract_accepts_exact_versioned_payload(self):
         request = bot._parse_ai_request(json.dumps({
@@ -129,26 +113,6 @@ class BrokerHandlerTest(unittest.IsolatedAsyncioTestCase):
         )
         pdf.assert_awaited_once()
         self.assertTrue(all("example.de" not in str(call) for call in audit.call_args_list))
-
-    async def test_live_v0_handler_passes_auto_without_logging_message(self):
-        data = "Profil: schnell\n\nAnalysiere secret.example"
-        message = SimpleNamespace(
-            web_app_data=SimpleNamespace(data=data), reply_text=AsyncMock(),
-        )
-        update = SimpleNamespace(
-            update_id=76,
-            effective_chat=SimpleNamespace(id=7459992119),
-            effective_user=SimpleNamespace(username="ralph"),
-            effective_message=message,
-        )
-        with patch("bot.is_authorized", return_value=True), \
-             patch("bot.check_rate_limit", return_value=(True, "")), \
-             patch("bot._already_processed", return_value=False), \
-             patch("bot.process_message", new=AsyncMock(return_value="Bericht")) as process, \
-             patch("bot.log_action") as audit:
-            await bot.handle_webapp_data(update, SimpleNamespace(args=[]))
-        process.assert_awaited_once_with(data, 7459992119, "auto")
-        self.assertTrue(all("secret.example" not in str(call) for call in audit.call_args_list))
 
     async def test_invalid_webapp_ai_request_never_reaches_model(self):
         message = SimpleNamespace(

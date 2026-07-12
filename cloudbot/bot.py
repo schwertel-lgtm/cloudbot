@@ -153,22 +153,6 @@ def _parse_ai_request(data: str) -> AIRequest:
     return AIRequest(message=message, model=model)
 
 
-def _parse_webapp_ai_request(data: str) -> tuple[AIRequest, str]:
-    """Akzeptiert temporaer V0-Freitext, aber nie JSON-artige Fehlformen.
-
-    Diese enge Bruecke ist nur fuer das nachweislich noch live ausgelieferte
-    V0-Dashboard bestimmt. Strukturierte Payloads bleiben fail-closed.
-    """
-    if not isinstance(data, str) or len(data.encode("utf-8")) > WEBAPP_DATA_MAX_BYTES:
-        raise ValueError("INVALID_AI_REQUEST")
-    stripped = data.strip()
-    if not stripped:
-        raise ValueError("INVALID_AI_REQUEST")
-    if stripped[0] in "{[":
-        return _parse_ai_request(data), "structured"
-    return AIRequest(message=data, model="auto"), "legacy_v0"
-
-
 def _versioned_webapp_url(url: str) -> str:
     """Erzwingt pro WebApp-Vertrag eine neue Telegram-/Browser-Cache-URL."""
     if not url:
@@ -180,11 +164,6 @@ def _versioned_webapp_url(url: str) -> str:
     ]
     query.append(("cloudbot_contract", WEBAPP_CONTRACT_VERSION))
     return urlunsplit(parts._replace(query=urlencode(query)))
-
-
-def _configured_webapp_url(url: str) -> str:
-    """Stage 1: Live-V0-URL unveraendert lassen, bis V2 publiziert ist."""
-    return url
 
 
 def _broker_error_text(error: DockerBrokerError, container: str | None = None) -> str:
@@ -490,7 +469,7 @@ async def cmd_hilfe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     log_action(update.effective_chat.id, "hilfe", "", "angezeigt", True)
 
 
-WEBAPP_URL = _configured_webapp_url(os.environ.get("WEBAPP_URL", ""))
+WEBAPP_URL = _versioned_webapp_url(os.environ.get("WEBAPP_URL", ""))
 
 
 @authorized
@@ -563,14 +542,14 @@ async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
         # Strukturierter WebApp-Auftrag -> KI
         try:
-            ai_request, request_source = _parse_webapp_ai_request(data)
+            ai_request = _parse_ai_request(data)
         except ValueError:
             logger.warning("Ungueltige Webapp-KI-Payload (%d Bytes)", len(data.encode("utf-8")))
             log_action(chat_id, "webapp", "type=invalid_ai_request", "abgelehnt", False)
             await update.effective_message.reply_text("Ungültige Dashboard-Anfrage.")
             return
         metadata = (
-            f"type={request_source} model={ai_request.model} "
+            f"type=ai_request model={ai_request.model} "
             f"message_chars={len(ai_request.message)}"
         )
         logger.info("Webapp-KI-Auftrag empfangen: %s", metadata)
