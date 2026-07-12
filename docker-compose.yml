@@ -73,13 +73,79 @@ services:
     depends_on:
       nordvpn:
         condition: service_healthy
+      cloudbot-claude:
+        condition: service_healthy
+      cloudbot-docker-broker:
+        condition: service_healthy
     env_file:
       - .env
+    environment:
+      - CLAUDE_CODE_MODEL=claude-sonnet-5
+    volumes:
+      - bot-logs:/app/logs
+      - claude-ipc:/run/claude-ipc
+      - docker-broker-ipc:/run/docker-broker
+    mem_limit: 512m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+
+  cloudbot-claude:
+    build:
+      context: ./cloudbot
+      dockerfile: Dockerfile.claude
+      network: host
+    container_name: cloudbot-claude
+    restart: unless-stopped
+    network_mode: service:nordvpn
+    depends_on:
+      nordvpn:
+        condition: service_healthy
+    volumes:
+      - claude-auth:/root/.claude
+      - claude-ipc:/run/claude-ipc
+    tmpfs:
+      - /tmp:size=100M
+    mem_limit: 512m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(socket.AF_UNIX); s.settimeout(2); s.connect('/run/claude-ipc/claude.sock'); s.sendall(b'{\"action\":\"auth_status\"}\\n'); assert b'\"ok\":true' in s.recv(4096)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  cloudbot-docker-broker:
+    build:
+      context: ./cloudbot
+      dockerfile: Dockerfile.broker
+    container_name: cloudbot-docker-broker
+    restart: unless-stopped
+    network_mode: none
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock:ro
-      - bot-logs:/app/logs
-    mem_limit: 512m
+      - docker-broker-ipc:/run/docker-broker
+    tmpfs:
+      - /tmp:size=10M
+    mem_limit: 128m
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.socket(socket.AF_UNIX); s.settimeout(2); s.connect('/run/docker-broker/broker.sock'); s.sendall(b'{\"operation\":\"list_containers\",\"params\":{}}\\n'); assert b'\"ok\":true' in s.recv(65536)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
 volumes:
   kali-data:
   bot-logs:
+  claude-auth:
+  claude-ipc:
+  docker-broker-ipc:

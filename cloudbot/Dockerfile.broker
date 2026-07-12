@@ -1,0 +1,7 @@
+FROM python:3.12-slim-bookworm
+
+WORKDIR /app
+COPY requirements.broker.txt .
+RUN pip install --no-cache-dir -r requirements.broker.txt
+COPY exec_security.py docker_broker_client.py docker_broker.py ./
+CMD ["python", "docker_broker.py"]

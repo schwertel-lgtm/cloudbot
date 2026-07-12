@@ -5,14 +5,25 @@ Nutzt Claude API um Auftraege eigenstaendig zu planen und auszufuehren.
 
 import os
 import time
-import threading
-import anthropic
-import docker
-from security import validate_exec_command, validate_container_name, sanitize_output
+import asyncio
+from claude_code_client import ClaudeCodeClient, ClaudeCodeError
+from security import validate_exec_command, sanitize_output
+from docker_broker_client import DockerBrokerClient, DockerBrokerError
 from audit_log import log_action, log_blocked_command
 
-ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-MODEL = "claude-sonnet-4-6"
+MODEL = os.environ.get("CLAUDE_CODE_MODEL", "sonnet")
+
+USER_ERROR_MESSAGES = {
+    "MAX_AUTH_REQUIRED": "Claude Max ist nicht angemeldet oder der Account ist kein Max-Abo.",
+    "SIDECAR_TIMEOUT": "Der KI-Dienst hat nicht rechtzeitig geantwortet.",
+    "CLAUDE_TIMEOUT": "Claude hat nicht rechtzeitig geantwortet.",
+    "SIDECAR_UNAVAILABLE": "Der isolierte KI-Dienst ist derzeit nicht erreichbar.",
+    "SIDECAR_BUSY": "Der KI-Dienst ist ausgelastet. Bitte versuche es gleich erneut.",
+}
+
+
+def _safe_ai_error(code: str) -> str:
+    return USER_ERROR_MESSAGES.get(code, "Der KI-Dienst konnte die Anfrage nicht verarbeiten.")
 
 # Scan-Profile: (max_steps, timeout_gesamt, timeout_pro_befehl)
 SCAN_PROFILES = {
@@ -51,8 +62,8 @@ def _detect_profile(message: str) -> tuple:
             return SCAN_PROFILES["normal"]
     return SCAN_PROFILES["default"]
 
-client_ai = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY) if ANTHROPIC_API_KEY else None
-client_docker = docker.from_env()
+client_ai = ClaudeCodeClient(model=MODEL)
+docker_broker = DockerBrokerClient()
 
 SYSTEM_PROMPT = """Du bist Cloudbot, ein professioneller Security-Analyst und Penetration Tester.
 Du laeuft auf einer Synology NAS mit einem voll ausgestatteten Kali Linux Container.
@@ -410,52 +421,27 @@ def _exec_in_kali(command: str, chat_id: int, exec_timeout: int = 180) -> str:
         log_blocked_command(chat_id, command, reason)
         return f"BLOCKIERT: {reason}"
 
-    valid_c, reason_c = validate_container_name("kali")
-    if not valid_c:
-        return f"FEHLER: {reason_c}"
-
     try:
-        container = client_docker.containers.get("kali")
-        # Befehl mit Timeout ausfuehren um Endlos-Blockaden zu verhindern
-        result_holder = [None, None]
-
-        def run_exec():
-            try:
-                result_holder[0] = container.exec_run(
-                    ["bash", "-c", command], demux=True
-                )
-            except Exception as e:
-                result_holder[1] = e
-
-        thread = threading.Thread(target=run_exec)
-        thread.start()
-        thread.join(timeout=exec_timeout)
-
-        if thread.is_alive():
-            log_action(chat_id, "ai_exec", command, f"Timeout nach {exec_timeout}s", False)
-            return f"TIMEOUT: Befehl nach {exec_timeout}s abgebrochen. Versuche einen schnelleren Scan oder teile den Auftrag auf."
-
-        if result_holder[1]:
-            raise result_holder[1]
-
-        result = result_holder[0]
-        stdout = result.output[0].decode("utf-8", errors="replace") if result.output[0] else ""
-        stderr = result.output[1].decode("utf-8", errors="replace") if result.output[1] else ""
-        output = stdout + stderr
+        result = docker_broker.exec_kali(command, exec_timeout)
+        output = result.stdout + result.stderr
         if not output.strip():
             output = "(keine Ausgabe)"
         output = sanitize_output(output)
         log_action(chat_id, "ai_exec", command, output[:200], True)
         return output[:8000]
-    except docker.errors.NotFound:
-        return "FEHLER: Kali-Container nicht gefunden."
-    except docker.errors.APIError as e:
-        return f"FEHLER: {str(e)[:200]}"
+    except DockerBrokerError as exc:
+        log_action(chat_id, "ai_exec", command, exc.code, False)
+        if exc.code == "EXEC_TIMEOUT":
+            return f"TIMEOUT: Befehl nach {exec_timeout}s abgebrochen. Versuche einen schnelleren Scan oder teile den Auftrag auf."
+        return "FEHLER: Docker-Dienst oder Kali-Container nicht verfügbar."
 
 
 def _get_container_status() -> str:
     """Gibt den Status aller Container zurueck."""
-    containers = client_docker.containers.list(all=True)
+    try:
+        containers = docker_broker.list_containers()
+    except DockerBrokerError:
+        return "Docker-Dienst ist derzeit nicht erreichbar."
     if not containers:
         return "Keine Container gefunden."
     lines = []
@@ -476,84 +462,136 @@ def _handle_tool_call(tool_name: str, tool_input: dict, chat_id: int,
 
 
 async def process_message(user_message: str, chat_id: int) -> str:
-    """Verarbeitet eine Freitext-Nachricht mit Claude AI."""
-    if not client_ai:
-        return "KI nicht konfiguriert (ANTHROPIC_API_KEY fehlt)."
+    """Verarbeitet eine Freitext-Nachricht über Claude Code im Max-Plan."""
+    try:
+        authenticated = await asyncio.to_thread(client_ai.authentication_status)
+    except ClaudeCodeError as exc:
+        log_action(chat_id, "ai_chat", user_message[:100], f"KI_AUTH_FEHLER:{exc.code}", False)
+        return _safe_ai_error(exc.code)
+    if not authenticated:
+        log_action(chat_id, "ai_chat", user_message[:100], "KI_AUTH_FEHLER:MAX_AUTH_REQUIRED", False)
+        return (
+            "Claude Max ist noch nicht angemeldet. Bitte einmal auf dem NAS "
+            "`docker exec -it cloudbot-claude claude auth login` ausführen und dabei "
+            "den Claude.ai-Max-Account auswählen."
+        )
 
     max_steps, timeout_seconds, exec_timeout = _detect_profile(user_message)
-
-    messages = [{"role": "user", "content": user_message}]
-    full_response = ""
+    history = [f"NUTZER:\n{user_message}"]
+    response_parts = []
     tool_outputs = []
     start_time = time.time()
     timed_out = False
+    used_steps = 0
+    model_done = False
+    protocol_error = False
 
-    for _step in range(max_steps):
-        # Timeout pruefen
+    response_protocol = """
+
+ANTWORTPROTOKOLL FÜR DEN CLOUDBOT:
+- Antworte ausschließlich über das vorgegebene JSON-Schema.
+- `text` enthält verständlichen deutschen Text für Ralph; während einer
+  Werkzeugrunde darf er leer sein.
+- `tool_calls` enthält höchstens vier Aufrufe. Erlaubt sind ausschließlich
+  `exec_kali` und `container_status`.
+- Bei `exec_kali` steht der vollständige geprüfte Shell-Befehl in `command`.
+- Bei `container_status` ist `command` ein leerer String.
+- Setze `done=true`, sobald der vollständige Endbericht in `text` steht.
+- Erfinde keine Werkzeugergebnisse. Fordere benötigte Prüfungen als
+  `tool_calls` an und werte die zurückgegebenen Ergebnisse aus.
+"""
+
+    while used_steps < max_steps:
         elapsed = time.time() - start_time
         if elapsed > timeout_seconds:
             timed_out = True
             break
-
+        remaining = int(timeout_seconds - elapsed)
+        if remaining < 30:
+            timed_out = True
+            break
+        transcript = "\n\n".join(history)
+        if len(transcript) > 60000:
+            transcript = transcript[-60000:]
+        prompt = (
+            "Bearbeite den folgenden Auftrag anhand des bisherigen Verlaufs. "
+            "Nutze Werkzeuge nur, wenn sie wirklich erforderlich sind.\n\n"
+            f"BISHERIGER VERLAUF:\n{transcript}"
+        )
+        query_timeout = min(remaining, 600)
         try:
-            response = client_ai.messages.create(
-                model=MODEL,
-                max_tokens=4096,
-                system=SYSTEM_PROMPT,
-                tools=TOOLS,
-                messages=messages,
+            response = await asyncio.to_thread(
+                client_ai.query,
+                SYSTEM_PROMPT + response_protocol,
+                prompt,
+                query_timeout,
             )
-        except Exception as e:
-            log_action(chat_id, "ai_chat", user_message[:100], f"API-Fehler: {str(e)[:200]}", False)
-            if full_response.strip():
-                return full_response.strip() + "\n\n(Abbruch wegen API-Fehler)"
-            return f"KI-Fehler: {str(e)[:200]}"
+        except ClaudeCodeError as exc:
+            log_action(chat_id, "ai_chat", user_message[:100], f"KI_FEHLER:{exc.code}", False)
+            if response_parts:
+                return "\n".join(response_parts).strip() + "\n\n(Abbruch: KI-Dienstfehler)"
+            return _safe_ai_error(exc.code)
 
-        # Text sammeln
-        for block in response.content:
-            if block.type == "text":
-                full_response += block.text + "\n"
+        if response.text.strip():
+            response_parts.append(response.text.strip())
+            history.append(f"ASSISTENT:\n{response.text.strip()}")
 
-        # Wenn keine Tool-Aufrufe, sind wir fertig
-        if response.stop_reason == "end_of_turn":
+        if response.done:
+            model_done = True
+            if not response.text.strip():
+                protocol_error = True
+            break
+        if not response.tool_calls:
             break
 
-        # Tool-Aufrufe verarbeiten
-        if response.stop_reason == "tool_use":
-            messages.append({"role": "assistant", "content": response.content})
-
-            tool_results = []
-            for block in response.content:
-                if block.type == "tool_use":
-                    result = _handle_tool_call(block.name, block.input, chat_id, exec_timeout)
-                    tool_results.append({
-                        "type": "tool_result",
-                        "tool_use_id": block.id,
-                        "content": result,
-                    })
-                    # Tool-Ergebnisse sammeln fuer Timeout-Fall
-                    cmd_info = block.input.get("command", block.name)
-                    tool_outputs.append(f"[{cmd_info}]\n{result[:2000]}")
-
-            messages.append({"role": "user", "content": tool_results})
-
-    # Falls nur Startmeldung vorhanden: Bericht explizit anfordern (OHNE Tools)
-    if full_response.strip() and len(full_response.strip()) < 500 and not timed_out:
-        try:
-            messages.append({"role": "user", "content": "Erstelle jetzt den kompletten Endbericht als Textantwort. Fasse alle Ergebnisse zusammen. Rufe KEINE weiteren Tools auf."})
-            response = client_ai.messages.create(
-                model=MODEL,
-                max_tokens=4096,
-                system=SYSTEM_PROMPT,
-                messages=messages,
+        for tool_call in response.tool_calls:
+            if used_steps >= max_steps:
+                break
+            tool_input = {"command": tool_call.command}
+            result = await asyncio.to_thread(
+                _handle_tool_call, tool_call.name, tool_input, chat_id, exec_timeout
             )
-            for block in response.content:
-                if block.type == "text":
-                    full_response += block.text + "\n"
-        except Exception:
-            pass
+            used_steps += 1
+            cmd_info = tool_call.command or tool_call.name
+            tool_outputs.append(f"[{cmd_info}]\n{result[:2000]}")
+            history.append(
+                f"WERKZEUGERGEBNIS {used_steps} ({tool_call.name}):\n{result[:8000]}"
+            )
+
+    # Ein abgebrochener Werkzeug-Zyklus ist noch kein Endbericht. Fordere genau
+    # einen Abschluss ohne weitere Werkzeugaufrufe an, auch wenn das Step-Budget
+    # verbraucht ist oder das Modell done=false ohne Aufrufe geliefert hat.
+    if not timed_out and not model_done:
+        elapsed = time.time() - start_time
+        remaining = int(timeout_seconds - elapsed)
+        if remaining >= 30:
+            history.append(
+                "SYSTEM: Erstelle jetzt den vollständigen Endbericht. Setze done=true "
+                "und tool_calls=[]. Fordere keine weiteren Werkzeuge an."
+            )
+            transcript = "\n\n".join(history)[-60000:]
+            try:
+                final_response = await asyncio.to_thread(
+                    client_ai.query,
+                    SYSTEM_PROMPT + response_protocol,
+                    f"BISHERIGER VERLAUF:\n{transcript}",
+                    min(remaining, 180),
+                )
+                if final_response.done and final_response.text.strip():
+                    response_parts.append(final_response.text.strip())
+                else:
+                    protocol_error = True
+            except ClaudeCodeError as exc:
+                log_action(chat_id, "ai_chat", user_message[:100], f"KI_ENDBERICHT_FEHLER:{exc.code}", False)
 
     elapsed = int(time.time() - start_time)
+    full_response = "\n".join(response_parts).strip()
+
+    if protocol_error:
+        code = "KI_ENDBERICHT_UNVOLLSTAENDIG"
+        log_action(chat_id, "ai_chat", user_message[:100], code, False)
+        return "Die KI hat keinen vollständigen Endbericht geliefert. Bitte versuche es erneut."
+
     log_action(chat_id, "ai_chat", user_message[:100], f"[{len(full_response)} Zeichen, {elapsed}s] {full_response[:150]}", True)
 
     if timed_out:
@@ -562,17 +600,15 @@ async def process_message(user_message: str, chat_id: int) -> str:
         if tool_outputs:
             try:
                 zusammenfassung = "\n\n".join(tool_outputs[-5:])
-                messages.append({"role": "user", "content": f"TIMEOUT erreicht. Fasse die bisherigen Ergebnisse kurz zusammen:\n\n{zusammenfassung[:4000]}"})
-                response = client_ai.messages.create(
-                    model=MODEL,
-                    max_tokens=2048,
-                    system="Du bist ein Security-Analyst. Fasse die bisherigen Scan-Ergebnisse kurz und verständlich zusammen. Auf Deutsch.",
-                    messages=[{"role": "user", "content": f"Fasse zusammen:\n\n{zusammenfassung[:4000]}"}],
+                response = await asyncio.to_thread(
+                    client_ai.query,
+                    "Du bist ein Security-Analyst. Fasse die bisherigen Scan-Ergebnisse kurz und verständlich auf Deutsch zusammen.",
+                    f"Fasse zusammen:\n\n{zusammenfassung[:4000]}",
+                    120,
                 )
-                for block in response.content:
-                    if block.type == "text":
-                        full_response = block.text + "\n"
-            except Exception:
+                full_response = response.text.strip()
+            except ClaudeCodeError as exc:
+                log_action(chat_id, "ai_chat", user_message[:100], f"KI_TIMEOUTBERICHT_FEHLER:{exc.code}", False)
                 # Fallback: Rohe Tool-Ergebnisse zurueckgeben
                 full_response = "Bisherige Ergebnisse:\n\n" + "\n\n".join(tool_outputs[-3:])
         if full_response.strip():

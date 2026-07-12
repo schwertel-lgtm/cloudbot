@@ -3,9 +3,8 @@ import io
 import re
 import socket
 import asyncio
-import tarfile
 import logging
-import docker
+import urllib.request
 from telegram import Update, WebAppInfo, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
@@ -77,6 +76,7 @@ from audit_log import (
     get_recent_logs,
 )
 from ai_agent import process_message, SEO_KEYWORDS
+from docker_broker_client import DockerBrokerClient, DockerBrokerError
 
 try:
     from seo_report import generate_seo_pdf
@@ -85,7 +85,24 @@ except ImportError:
 
 TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 
-client = docker.from_env()
+docker_broker = DockerBrokerClient()
+
+
+def _broker_error_text(error: DockerBrokerError, container: str | None = None) -> str:
+    """Stable, non-sensitive Telegram text for broker failures."""
+    if error.code == "CONTAINER_NOT_FOUND":
+        return f"Container '{container}' nicht gefunden." if container else "Container nicht gefunden."
+    if error.code == "FILE_NOT_FOUND":
+        return "Datei nicht gefunden."
+    if error.code == "FILE_TOO_LARGE":
+        return "Datei ist zu groß (maximal 8 MB)."
+    if error.code == "FILE_READ_TIMEOUT":
+        return "Datei konnte nicht rechtzeitig gelesen werden."
+    if error.code == "EXEC_TIMEOUT":
+        return "Zeitlimit bei der Ausführung überschritten."
+    if error.code == "COMMAND_BLOCKED":
+        return "Befehl wurde durch eine Sicherheitsregel blockiert."
+    return "Docker-Dienst ist derzeit nicht erreichbar."
 
 
 def authorized(func):
@@ -106,7 +123,12 @@ def authorized(func):
 
 @authorized
 async def cmd_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    containers = client.containers.list(all=True)
+    try:
+        containers = await asyncio.to_thread(docker_broker.list_containers)
+    except DockerBrokerError as exc:
+        await update.message.reply_text("Docker-Dienst ist derzeit nicht erreichbar.")
+        log_action(update.effective_chat.id, "status", "", exc.code, False)
+        return
     if not containers:
         await update.message.reply_text("Keine Container gefunden.")
         log_action(update.effective_chat.id, "status", "", "keine Container", True)
@@ -129,13 +151,12 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         log_action(update.effective_chat.id, "start", str(name), reason, False)
         return
     try:
-        container = client.containers.get(name)
-        container.start()
+        await asyncio.to_thread(docker_broker.start, name)
         await update.message.reply_text(f"{name} gestartet.")
         log_action(update.effective_chat.id, "start", name, "gestartet", True)
-    except docker.errors.NotFound:
-        await update.message.reply_text(f"Container '{name}' nicht gefunden.")
-        log_action(update.effective_chat.id, "start", name, "nicht gefunden", False)
+    except DockerBrokerError as exc:
+        await update.message.reply_text(_broker_error_text(exc, name))
+        log_action(update.effective_chat.id, "start", name, exc.code, False)
 
 
 @authorized
@@ -151,13 +172,12 @@ async def cmd_stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
         log_action(update.effective_chat.id, "stop", name, "Selbst-Stop verhindert", False)
         return
     try:
-        container = client.containers.get(name)
-        container.stop()
+        await asyncio.to_thread(docker_broker.stop, name)
         await update.message.reply_text(f"{name} gestoppt.")
         log_action(update.effective_chat.id, "stop", name, "gestoppt", True)
-    except docker.errors.NotFound:
-        await update.message.reply_text(f"Container '{name}' nicht gefunden.")
-        log_action(update.effective_chat.id, "stop", name, "nicht gefunden", False)
+    except DockerBrokerError as exc:
+        await update.message.reply_text(_broker_error_text(exc, name))
+        log_action(update.effective_chat.id, "stop", name, exc.code, False)
 
 
 @authorized
@@ -173,13 +193,12 @@ async def cmd_restart(update: Update, context: ContextTypes.DEFAULT_TYPE):
         log_action(update.effective_chat.id, "restart", name, "Selbst-Restart verhindert", False)
         return
     try:
-        container = client.containers.get(name)
-        container.restart()
+        await asyncio.to_thread(docker_broker.restart, name)
         await update.message.reply_text(f"{name} neugestartet.")
         log_action(update.effective_chat.id, "restart", name, "neugestartet", True)
-    except docker.errors.NotFound:
-        await update.message.reply_text(f"Container '{name}' nicht gefunden.")
-        log_action(update.effective_chat.id, "restart", name, "nicht gefunden", False)
+    except DockerBrokerError as exc:
+        await update.message.reply_text(_broker_error_text(exc, name))
+        log_action(update.effective_chat.id, "restart", name, exc.code, False)
 
 
 @authorized
@@ -191,16 +210,15 @@ async def cmd_logs(update: Update, context: ContextTypes.DEFAULT_TYPE):
         log_action(update.effective_chat.id, "logs", str(name), reason, False)
         return
     try:
-        container = client.containers.get(name)
-        logs = container.logs(tail=30).decode("utf-8", errors="replace")
+        logs = await asyncio.to_thread(docker_broker.logs, name)
         if not logs.strip():
             logs = "(keine Logs)"
         logs = sanitize_output(logs)
         await update.message.reply_text(f"Logs von {name}:\n\n{logs[:3500]}")
         log_action(update.effective_chat.id, "logs", name, "gesendet", True)
-    except docker.errors.NotFound:
-        await update.message.reply_text(f"Container '{name}' nicht gefunden.")
-        log_action(update.effective_chat.id, "logs", name, "nicht gefunden", False)
+    except DockerBrokerError as exc:
+        await update.message.reply_text(_broker_error_text(exc, name))
+        log_action(update.effective_chat.id, "logs", name, exc.code, False)
 
 
 @authorized
@@ -211,9 +229,8 @@ async def cmd_exec(update: Update, context: ContextTypes.DEFAULT_TYPE):
     name = context.args[0]
     command = " ".join(context.args[1:])
 
-    # Container validieren
-    valid, reason = validate_container_name(name)
-    if not valid:
+    if name != "kali":
+        reason = "Befehle dürfen ausschließlich im Kali-Container ausgeführt werden."
         await update.message.reply_text(reason)
         log_action(update.effective_chat.id, "exec", f"{name} {command}", reason, False)
         return
@@ -227,22 +244,16 @@ async def cmd_exec(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     try:
-        container = client.containers.get(name)
-        result = container.exec_run(["bash", "-c", command], demux=True)
-        stdout = result.output[0].decode("utf-8", errors="replace") if result.output[0] else ""
-        stderr = result.output[1].decode("utf-8", errors="replace") if result.output[1] else ""
-        output = stdout + stderr
+        result = await asyncio.to_thread(docker_broker.exec_kali, command, 180)
+        output = result.stdout + result.stderr
         if not output.strip():
             output = "(keine Ausgabe)"
         output = sanitize_output(output)
         await update.message.reply_text(f"$ {command}\n\n{output[:3500]}")
         log_action(update.effective_chat.id, "exec", f"{name} {command}", output[:200], True)
-    except docker.errors.NotFound:
-        await update.message.reply_text(f"Container '{name}' nicht gefunden.")
-        log_action(update.effective_chat.id, "exec", f"{name} {command}", "nicht gefunden", False)
-    except docker.errors.APIError as e:
-        await update.message.reply_text("Fehler bei der Ausfuehrung.")
-        log_action(update.effective_chat.id, "exec", f"{name} {command}", str(e)[:200], False)
+    except DockerBrokerError as exc:
+        await update.message.reply_text(_broker_error_text(exc, name))
+        log_action(update.effective_chat.id, "exec", f"{name} {command}", exc.code, False)
 
 
 @authorized
@@ -255,32 +266,33 @@ async def cmd_audit(update: Update, context: ContextTypes.DEFAULT_TYPE):
 @authorized
 async def cmd_vpn(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        container = client.containers.get("nordvpn")
-        result = container.exec_run("nordvpn status", demux=True)
-        stdout = result.output[0].decode("utf-8", errors="replace") if result.output[0] else ""
-        stderr = result.output[1].decode("utf-8", errors="replace") if result.output[1] else ""
-        output = stdout or stderr or "(keine Ausgabe)"
+        result = await asyncio.to_thread(docker_broker.vpn_status)
+        output = result.stdout or result.stderr or "(keine Ausgabe)"
         output = sanitize_output(output)
         await update.message.reply_text(f"VPN Status:\n\n{output}")
         log_action(update.effective_chat.id, "vpn", "", "angezeigt", True)
-    except docker.errors.NotFound:
-        await update.message.reply_text("NordVPN-Container nicht gefunden.")
-        log_action(update.effective_chat.id, "vpn", "", "nicht gefunden", False)
+    except DockerBrokerError as exc:
+        await update.message.reply_text(_broker_error_text(exc, "nordvpn"))
+        log_action(update.effective_chat.id, "vpn", "", exc.code, False)
 
 
 @authorized
 async def cmd_ip(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
-        container = client.containers.get("nordvpn")
-        result = container.exec_run("curl -s --max-time 10 ifconfig.me", demux=True)
-        stdout = result.output[0].decode("utf-8", errors="replace") if result.output[0] else ""
-        stderr = result.output[1].decode("utf-8", errors="replace") if result.output[1] else ""
-        ip = stdout.strip() if stdout.strip() else "Konnte IP nicht ermitteln."
+        ip = await asyncio.to_thread(_fetch_external_ip)
+        if not ip:
+            ip = "Konnte IP nicht ermitteln."
         await update.message.reply_text(f"Externe IP: {ip}")
         log_action(update.effective_chat.id, "ip", "", ip, True)
-    except docker.errors.NotFound:
-        await update.message.reply_text("NordVPN-Container nicht gefunden.")
-        log_action(update.effective_chat.id, "ip", "", "nicht gefunden", False)
+    except (OSError, ValueError) as exc:
+        await update.message.reply_text("Externe IP konnte nicht ermittelt werden.")
+        log_action(update.effective_chat.id, "ip", "", type(exc).__name__, False)
+
+
+def _fetch_external_ip() -> str:
+    """Runs through the controller's NordVPN network namespace."""
+    with urllib.request.urlopen("https://ifconfig.me/ip", timeout=10) as response:
+        return response.read(128).decode("ascii", errors="replace").strip()
 
 
 @authorized
@@ -302,28 +314,9 @@ async def cmd_download(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
     try:
-        container = client.containers.get(container_name)
-        try:
-            archive, _ = container.get_archive(filepath)
-            tar_data = b"".join(archive)
-            tar_stream = io.BytesIO(tar_data)
-            with tarfile.open(fileobj=tar_stream) as tar:
-                member = tar.getmembers()[0]
-                if member.isfile():
-                    f = tar.extractfile(member)
-                    file_data = f.read()
-                else:
-                    await update.message.reply_text(f"'{filepath}' ist ein Verzeichnis. Nutze /files um Dateien aufzulisten.")
-                    return
-        except docker.errors.NotFound:
-            # Fallback fuer tmpfs-Pfade: Datei per cat lesen
-            result = container.exec_run(["bash", "-c", f"cat '{filepath}'"], demux=True)
-            stdout = result.output[0] if result.output[0] else b""
-            if not stdout:
-                await update.message.reply_text(f"Datei nicht gefunden: {filepath}")
-                log_action(update.effective_chat.id, "download", filepath, "nicht gefunden", False)
-                return
-            file_data = stdout
+        file_data = await asyncio.to_thread(
+            docker_broker.download_file, container_name, filepath
+        )
         filename = os.path.basename(filepath)
         await update.message.reply_document(
             document=io.BytesIO(file_data),
@@ -331,21 +324,19 @@ async def cmd_download(update: Update, context: ContextTypes.DEFAULT_TYPE):
             caption=f"Datei von {container_name}:{filepath}"
         )
         log_action(update.effective_chat.id, "download", filepath, f"{len(file_data)} bytes", True)
-    except docker.errors.NotFound:
-        await update.message.reply_text(f"Container '{container_name}' nicht gefunden.")
-        log_action(update.effective_chat.id, "download", filepath, "nicht gefunden", False)
+    except DockerBrokerError as exc:
+        await update.message.reply_text(_broker_error_text(exc, container_name))
+        log_action(update.effective_chat.id, "download", filepath, exc.code, False)
     except Exception as e:
-        await update.message.reply_text(f"Fehler beim Download: {str(e)[:300]}")
-        log_action(update.effective_chat.id, "download", filepath, str(e)[:200], False)
+        await update.message.reply_text("Datei konnte nicht verarbeitet werden.")
+        log_action(update.effective_chat.id, "download", filepath, type(e).__name__, False)
 
 
 @authorized
 async def cmd_files(update: Update, context: ContextTypes.DEFAULT_TYPE):
     path = " ".join(context.args) if context.args else "/root/data/scans"
     try:
-        container = client.containers.get("kali")
-        result = container.exec_run(f"find {path} -maxdepth 2 -type f -printf '%s %p\\n'", demux=True)
-        stdout = result.output[0].decode("utf-8", errors="replace") if result.output[0] else ""
+        stdout = await asyncio.to_thread(docker_broker.list_files, path)
         if not stdout.strip():
             await update.message.reply_text(f"Keine Dateien in {path}")
             return
@@ -353,7 +344,10 @@ async def cmd_files(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for line in stdout.strip().split("\n")[:30]:
             parts = line.split(" ", 1)
             if len(parts) == 2:
-                size = int(parts[0])
+                try:
+                    size = int(parts[0])
+                except ValueError:
+                    continue
                 name = parts[1]
                 if size > 1024 * 1024:
                     size_str = f"{size // (1024*1024)} MB"
@@ -365,8 +359,12 @@ async def cmd_files(update: Update, context: ContextTypes.DEFAULT_TYPE):
         output = "\n".join(lines)
         await update.message.reply_text(f"Dateien in {path}:\n\n{output[:3500]}\n\nDownload: /download <pfad>")
         log_action(update.effective_chat.id, "files", path, f"{len(lines)} Dateien", True)
+    except DockerBrokerError as exc:
+        await update.message.reply_text(_broker_error_text(exc, "kali"))
+        log_action(update.effective_chat.id, "files", path, exc.code, False)
     except Exception as e:
-        await update.message.reply_text(f"Fehler: {str(e)[:300]}")
+        await update.message.reply_text("Dateiliste konnte nicht verarbeitet werden.")
+        log_action(update.effective_chat.id, "files", path, type(e).__name__, False)
 
 
 @authorized
@@ -524,6 +522,9 @@ _PROCESSED_MAX = 1000
 
 def _already_processed(update_id: int) -> bool:
     """True, wenn diese update_id schon gesehen wurde. Markiert sie sonst."""
+    # Alle Aufrufer laufen als Tasks desselben asyncio-Eventloops. Diese
+    # Funktion enthält kein await und ist damit bis zur Rückgabe atomar; ein
+    # Thread-Lock wäre hier wirkungslos für Tasks und unnötig.
     if update_id in _processed_updates:
         return True
     _processed_updates.add(update_id)
