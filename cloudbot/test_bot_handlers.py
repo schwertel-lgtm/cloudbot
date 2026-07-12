@@ -1,4 +1,5 @@
 import os
+import json
 from types import SimpleNamespace
 import unittest
 from unittest.mock import AsyncMock, patch
@@ -11,6 +12,179 @@ from docker_broker_client import DockerBrokerError, ExecResult
 
 
 class BrokerHandlerTest(unittest.IsolatedAsyncioTestCase):
+    def test_stage1_webapp_url_remains_unchanged(self):
+        configured = bot._configured_webapp_url(
+            "https://dashboard.example/app?theme=dark&cloudbot_contract=old#panel"
+        )
+        self.assertEqual(
+            "https://dashboard.example/app?theme=dark&cloudbot_contract=old#panel",
+            configured,
+        )
+        self.assertEqual("", bot._configured_webapp_url(""))
+
+    def test_live_v0_freetext_is_temporarily_normalized_to_auto(self):
+        request, source = bot._parse_webapp_ai_request("Profil: schnell\n\nAnalysiere example.de")
+        self.assertEqual("Profil: schnell\n\nAnalysiere example.de", request.message)
+        self.assertEqual("auto", request.model)
+        self.assertEqual("legacy_v0", source)
+
+    def test_v0_bridge_rejects_empty_oversized_and_json_shaped_failures(self):
+        invalid = (
+            "", "   ", "x" * (bot.WEBAPP_DATA_MAX_BYTES + 1),
+            "{", "[", "{not-json", "[1, 2]",
+            '{"type":"ai_request"}',
+        )
+        for data in invalid:
+            with self.subTest(data=data[:30]), self.assertRaises(ValueError):
+                bot._parse_webapp_ai_request(data)
+
+    def test_ai_request_contract_accepts_exact_versioned_payload(self):
+        request = bot._parse_ai_request(json.dumps({
+            "type": "ai_request", "version": 2,
+            "message": "SEO-Analyse", "model": "claude-sonnet-4-6",
+        }))
+        self.assertEqual("SEO-Analyse", request.message)
+        self.assertEqual("claude-sonnet-4-6", request.model)
+
+    def test_v2_contract_accepts_every_canonical_model_and_auto(self):
+        for model in bot.AI_MODEL_SELECTIONS:
+            with self.subTest(model=model):
+                request = bot._parse_ai_request(json.dumps({
+                    "type": "ai_request", "version": 2,
+                    "message": "Auftrag", "model": model,
+                }))
+                self.assertEqual(model, request.model)
+
+    def test_cached_v1_aliases_are_normalized_for_bot_first_rollout(self):
+        aliases = {
+            "auto": "auto",
+            "haiku": "claude-haiku-4-5",
+            "sonnet": "claude-sonnet-5",
+            "opus": "claude-opus-4-8",
+        }
+        for old, canonical in aliases.items():
+            with self.subTest(old=old):
+                request = bot._parse_ai_request(json.dumps({
+                    "type": "ai_request", "version": 1,
+                    "message": "Auftrag", "model": old,
+                }))
+                self.assertEqual(canonical, request.model)
+
+    def test_ai_request_contract_rejects_bad_shapes_types_and_models(self):
+        valid = {
+            "type": "ai_request", "version": 2,
+            "message": "Auftrag", "model": "claude-sonnet-5",
+        }
+        invalid = [
+            [],
+            {**valid, "extra": True},
+            {key: value for key, value in valid.items() if key != "model"},
+            {**valid, "type": "command"},
+            {**valid, "version": True},
+            {**valid, "version": 3},
+            {**valid, "message": "  "},
+            {**valid, "message": 3},
+            {**valid, "model": "opus"},
+            {**valid, "model": "claude-sonnet-4-0"},
+            {**valid, "model": "claude-unknown-9"},
+            {**valid, "model": "auto --dangerously-skip-permissions"},
+        ]
+        for payload in invalid:
+            with self.subTest(payload=payload), self.assertRaises(ValueError):
+                bot._parse_ai_request(json.dumps(payload))
+        with self.assertRaises(ValueError):
+            bot._parse_ai_request("Profil: schnell")
+
+    def test_ai_request_contract_enforces_utf8_byte_limit(self):
+        payload = json.dumps({
+            "type": "ai_request", "version": 2,
+            "message": "ä" * 4096, "model": "auto",
+        }, ensure_ascii=False)
+        with self.assertRaises(ValueError):
+            bot._parse_ai_request(payload)
+
+    async def test_webapp_ai_request_passes_structured_model_separately(self):
+        payload = json.dumps({
+            "type": "ai_request", "version": 2,
+            "message": "SEO-Analyse example.de", "model": "claude-opus-4-7",
+        })
+        message = SimpleNamespace(
+            web_app_data=SimpleNamespace(data=payload), reply_text=AsyncMock(),
+        )
+        update = SimpleNamespace(
+            update_id=77,
+            effective_chat=SimpleNamespace(id=7459992119),
+            effective_user=SimpleNamespace(username="ralph"),
+            effective_message=message,
+        )
+        with patch("bot.is_authorized", return_value=True), \
+             patch("bot.check_rate_limit", return_value=(True, "")), \
+             patch("bot._already_processed", return_value=False), \
+             patch("bot.process_message", new=AsyncMock(return_value="Bericht")) as process, \
+             patch("bot._send_seo_pdf", new=AsyncMock()) as pdf, \
+             patch("bot.log_action") as audit:
+            await bot.handle_webapp_data(update, SimpleNamespace(args=[]))
+        process.assert_awaited_once_with(
+            "SEO-Analyse example.de", 7459992119, "claude-opus-4-7"
+        )
+        pdf.assert_awaited_once()
+        self.assertTrue(all("example.de" not in str(call) for call in audit.call_args_list))
+
+    async def test_live_v0_handler_passes_auto_without_logging_message(self):
+        data = "Profil: schnell\n\nAnalysiere secret.example"
+        message = SimpleNamespace(
+            web_app_data=SimpleNamespace(data=data), reply_text=AsyncMock(),
+        )
+        update = SimpleNamespace(
+            update_id=76,
+            effective_chat=SimpleNamespace(id=7459992119),
+            effective_user=SimpleNamespace(username="ralph"),
+            effective_message=message,
+        )
+        with patch("bot.is_authorized", return_value=True), \
+             patch("bot.check_rate_limit", return_value=(True, "")), \
+             patch("bot._already_processed", return_value=False), \
+             patch("bot.process_message", new=AsyncMock(return_value="Bericht")) as process, \
+             patch("bot.log_action") as audit:
+            await bot.handle_webapp_data(update, SimpleNamespace(args=[]))
+        process.assert_awaited_once_with(data, 7459992119, "auto")
+        self.assertTrue(all("secret.example" not in str(call) for call in audit.call_args_list))
+
+    async def test_invalid_webapp_ai_request_never_reaches_model(self):
+        message = SimpleNamespace(
+            web_app_data=SimpleNamespace(data='{"type":"ai_request"}'),
+            reply_text=AsyncMock(),
+        )
+        update = SimpleNamespace(
+            update_id=78,
+            effective_chat=SimpleNamespace(id=7459992119),
+            effective_user=SimpleNamespace(username="ralph"),
+            effective_message=message,
+        )
+        with patch("bot.is_authorized", return_value=True), \
+             patch("bot.check_rate_limit", return_value=(True, "")), \
+             patch("bot._already_processed", return_value=False), \
+             patch("bot.process_message", new=AsyncMock()) as process, \
+             patch("bot.log_action"):
+            await bot.handle_webapp_data(update, SimpleNamespace(args=[]))
+        process.assert_not_awaited()
+        message.reply_text.assert_awaited_once_with("Ungültige Dashboard-Anfrage.")
+
+    async def test_plain_telegram_text_always_uses_auto_model_selection(self):
+        message = SimpleNamespace(text="Bitte schnell prüfen", reply_text=AsyncMock())
+        update = SimpleNamespace(
+            update_id=79,
+            effective_chat=SimpleNamespace(id=7459992119),
+            effective_user=SimpleNamespace(username="ralph"),
+            message=message,
+        )
+        with patch("bot.is_authorized", return_value=True), \
+             patch("bot.check_rate_limit", return_value=(True, "")), \
+             patch("bot._already_processed", return_value=False), \
+             patch("bot.process_message", new=AsyncMock(return_value="Fertig")) as process:
+            await bot.handle_message(update, SimpleNamespace(args=[]))
+        process.assert_awaited_once_with("Bitte schnell prüfen", 7459992119, "auto")
+
     async def test_vpn_handler_offloads_fixed_broker_operation(self):
         message = SimpleNamespace(reply_text=AsyncMock())
         update = SimpleNamespace(

@@ -111,6 +111,16 @@
         .sent-toast.show {
             transform: translateX(-50%) translateY(0);
         }
+        .preview-notice {
+            margin: 10px 12px 0;
+            padding: 8px 10px;
+            border: 1px solid var(--tg-theme-hint-color, #8b949e);
+            border-radius: 8px;
+            color: var(--tg-theme-hint-color, #8b949e);
+            font-size: 12px;
+            text-align: center;
+        }
+        .preview-notice[hidden] { display: none; }
 
         /* Scan Panel */
         .form-group { margin-bottom: 12px; }
@@ -158,6 +168,51 @@
             color: var(--tg-theme-button-text-color, #fff);
             border-color: var(--tg-theme-button-color, #58a6ff);
         }
+        .model-selector { margin-bottom: 12px; }
+        .model-option {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+        }
+        .model-option input { accent-color: var(--tg-theme-button-color, #58a6ff); }
+        .model-option span {
+            flex: 1;
+            padding: 7px 8px;
+            border: 1px solid var(--tg-theme-secondary-bg-color, #30363d);
+            border-radius: 7px;
+            text-align: center;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .model-option input:checked + span {
+            background: var(--tg-theme-button-color, #58a6ff);
+            color: var(--tg-theme-button-text-color, #fff);
+            border-color: var(--tg-theme-button-color, #58a6ff);
+        }
+        .model-auto { margin-bottom: 7px; }
+        .model-families {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 6px;
+        }
+        .model-family {
+            border: 1px solid var(--tg-theme-secondary-bg-color, #30363d);
+            border-radius: 8px;
+            background: var(--tg-theme-secondary-bg-color, #161b22);
+        }
+        .model-family summary {
+            padding: 9px 6px;
+            cursor: pointer;
+            text-align: center;
+            font-size: 13px;
+            font-weight: 700;
+        }
+        .model-version-options {
+            display: grid;
+            gap: 5px;
+            padding: 0 6px 7px;
+        }
 
         .scan-btn {
             width: 100%;
@@ -193,6 +248,8 @@
     <button class="tab" onclick="switchTab('seo')">SEO</button>
 </div>
 
+<div class="preview-notice" id="preview-notice" hidden>Lokale Vorschau – Senden deaktiviert</div>
+
 <!-- BEFEHLE -->
 <div class="panel active" id="panel-commands">
     <h2>System</h2>
@@ -213,6 +270,39 @@
             <span class="icon">&#128209;</span> /audit
             <span class="label">Letzte Aktionen</span>
         </button>
+    </div>
+
+    <h2>KI-Modell</h2>
+    <div class="model-selector" id="model-selector">
+        <label class="model-option model-auto">
+            <input type="radio" name="ai-model" value="auto" checked>
+            <span>Auto</span>
+        </label>
+        <div class="model-families">
+            <details class="model-family">
+                <summary>Haiku</summary>
+                <div class="model-version-options">
+                    <label class="model-option"><input type="radio" name="ai-model" value="claude-haiku-4-5"><span>4.5</span></label>
+                </div>
+            </details>
+            <details class="model-family">
+                <summary>Sonnet</summary>
+                <div class="model-version-options">
+                    <label class="model-option"><input type="radio" name="ai-model" value="claude-sonnet-5"><span>5</span></label>
+                    <label class="model-option"><input type="radio" name="ai-model" value="claude-sonnet-4-6"><span>4.6</span></label>
+                    <label class="model-option"><input type="radio" name="ai-model" value="claude-sonnet-4-5"><span>4.5</span></label>
+                </div>
+            </details>
+            <details class="model-family">
+                <summary>Opus</summary>
+                <div class="model-version-options">
+                    <label class="model-option"><input type="radio" name="ai-model" value="claude-opus-4-8"><span>4.8</span></label>
+                    <label class="model-option"><input type="radio" name="ai-model" value="claude-opus-4-7"><span>4.7</span></label>
+                    <label class="model-option"><input type="radio" name="ai-model" value="claude-opus-4-6"><span>4.6</span></label>
+                    <label class="model-option"><input type="radio" name="ai-model" value="claude-opus-4-5"><span>4.5</span></label>
+                </div>
+            </details>
+        </div>
     </div>
 
     <h2>Logs</h2>
@@ -544,15 +634,29 @@
 <div class="sent-toast" id="toast">Gesendet!</div>
 
 <script>
-const tg = window.Telegram.WebApp;
-tg.ready();
-tg.expand();
+const tg = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+const isTelegramMiniApp = Boolean(
+    tg && typeof tg.ready === 'function' && typeof tg.expand === 'function' &&
+    typeof tg.sendData === 'function'
+);
+if (isTelegramMiniApp) {
+    tg.ready();
+    tg.expand();
+} else {
+    document.getElementById('preview-notice').hidden = false;
+}
 
 let scanProfile = 'normal';
 let exploitMode = 'nein';
 let osintDepth = 'standard';
 let setMode = 'phishing';
 let seoDepth = 'normal';
+const allowedModelIds = new Set([
+    'auto',
+    'claude-haiku-4-5',
+    'claude-sonnet-5', 'claude-sonnet-4-6', 'claude-sonnet-4-5',
+    'claude-opus-4-8', 'claude-opus-4-7', 'claude-opus-4-6', 'claude-opus-4-5'
+]);
 
 function switchTab(name) {
     document.querySelectorAll('.tab').forEach((t, i) => {
@@ -570,8 +674,38 @@ function showToast(text) {
 }
 
 function send(command) {
+    if (!isTelegramMiniApp) {
+        showToast('Lokale Vorschau – Senden deaktiviert');
+        return false;
+    }
     tg.sendData(command);
     showToast('Gesendet!');
+    return true;
+}
+
+function sendAi(message) {
+    const checkedModel = document.querySelector('input[name="ai-model"]:checked');
+    if (!checkedModel || !allowedModelIds.has(checkedModel.value)) {
+        showToast('Ungültige Modellauswahl – Senden blockiert');
+        return false;
+    }
+    const payload = JSON.stringify({
+        type: 'ai_request',
+        version: 2,
+        message: message,
+        model: checkedModel.value
+    });
+    if (!isTelegramMiniApp) {
+        showToast('Lokale Vorschau – Senden deaktiviert');
+        return false;
+    }
+    if (new TextEncoder().encode(payload).length > 4096) {
+        alert('Die Anfrage ist zu lang. Bitte Eingaben kürzen.');
+        return false;
+    }
+    tg.sendData(payload);
+    showToast('Gesendet!');
+    return true;
 }
 
 function execCustom() {
@@ -618,7 +752,7 @@ function toggleSeoCheck(el) {
 function val(id) { return document.getElementById(id).value.trim(); }
 
 function quickScan(text) {
-    send(`Profil: ${scanProfile}\n\n${text}\n\nSpeichere alle Ergebnisse in /root/data/scans/`);
+    sendAi(`Profil: ${scanProfile}\n\n${text}\n\nSpeichere alle Ergebnisse in /root/data/scans/`);
 }
 
 function sendScan() {
@@ -653,7 +787,7 @@ function sendScan() {
 
     msg += '\n\nWaehle automatisch die passenden Tools.';
     msg += '\nSpeichere alle Ergebnisse in /root/data/scans/';
-    send(msg);
+    sendAi(msg);
 }
 
 function sendOsint() {
@@ -705,7 +839,7 @@ function sendOsint() {
 
     msg += '\n\nWaehle automatisch die passenden Tools.';
     msg += '\nSpeichere alle Ergebnisse in /root/data/scans/';
-    send(msg);
+    sendAi(msg);
 }
 
 function sendSet() {
@@ -783,7 +917,7 @@ function sendSet() {
     msg += '\n\nDokumentiere alle Schritte und Ergebnisse.';
     msg += '\nSpeichere alle Ergebnisse in /root/data/scans/';
 
-    send(msg);
+    sendAi(msg);
 }
 
 function sendSeo() {
@@ -839,7 +973,7 @@ function sendSeo() {
 
     msg += '\n\nSpeichere den Bericht in /root/data/scans/';
 
-    send(msg);
+    sendAi(msg);
 }
 </script>
 

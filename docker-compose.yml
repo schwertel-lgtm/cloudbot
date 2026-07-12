@@ -79,8 +79,6 @@ services:
         condition: service_healthy
     env_file:
       - .env
-    environment:
-      - CLAUDE_CODE_MODEL=claude-sonnet-5
     volumes:
       - bot-logs:/app/logs
       - claude-ipc:/run/claude-ipc

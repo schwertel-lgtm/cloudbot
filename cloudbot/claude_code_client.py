@@ -11,6 +11,16 @@ from typing import Any
 
 DEFAULT_SOCKET_PATH = "/run/claude-ipc/claude.sock"
 MAX_IPC_BYTES = 1_000_000
+ALLOWED_MODELS = frozenset({
+    "claude-haiku-4-5",
+    "claude-sonnet-5",
+    "claude-sonnet-4-6",
+    "claude-sonnet-4-5",
+    "claude-opus-4-8",
+    "claude-opus-4-7",
+    "claude-opus-4-6",
+    "claude-opus-4-5",
+})
 SIDECAR_ERROR_CODES = {
     "CLAUDE_MALFORMED_OUTPUT",
     "CLAUDE_NONZERO_EXIT",
@@ -46,8 +56,7 @@ class ClaudeCodeResult:
 
 
 class ClaudeCodeClient:
-    def __init__(self, model: str = "sonnet", socket_path: str = DEFAULT_SOCKET_PATH) -> None:
-        self.model = model
+    def __init__(self, socket_path: str = DEFAULT_SOCKET_PATH) -> None:
         self.socket_path = socket_path
 
     def _request(self, payload: dict[str, Any], timeout: int) -> dict[str, Any]:
@@ -108,14 +117,17 @@ class ClaudeCodeClient:
         except ClaudeCodeError:
             return False
 
-    def query(self, system_prompt: str, prompt: str, timeout: int) -> ClaudeCodeResult:
+    def query(self, system_prompt: str, prompt: str, timeout: int,
+              model: str) -> ClaudeCodeResult:
+        if not isinstance(model, str) or model not in ALLOWED_MODELS:
+            raise ClaudeCodeError("INVALID_REQUEST")
         result = self._request(
             {
                 "action": "query",
                 "system_prompt": system_prompt,
                 "prompt": prompt,
                 "timeout": timeout,
-                "model": self.model,
+                "model": model,
             },
             timeout + 5,
         )

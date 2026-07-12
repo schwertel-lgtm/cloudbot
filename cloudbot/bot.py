@@ -1,10 +1,13 @@
 import os
 import io
+import json
 import re
 import socket
 import asyncio
 import logging
 import urllib.request
+from dataclasses import dataclass
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from telegram import Update, WebAppInfo, KeyboardButton, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 
@@ -86,6 +89,102 @@ except ImportError:
 TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 
 docker_broker = DockerBrokerClient()
+
+WEBAPP_DATA_MAX_BYTES = 4096
+AI_REQUEST_VERSION = 2
+AI_MODEL_SELECTIONS = frozenset({
+    "auto",
+    "claude-haiku-4-5",
+    "claude-sonnet-5",
+    "claude-sonnet-4-6",
+    "claude-sonnet-4-5",
+    "claude-opus-4-8",
+    "claude-opus-4-7",
+    "claude-opus-4-6",
+    "claude-opus-4-5",
+})
+AI_V1_MODEL_ALIASES = {
+    "auto": "auto",
+    "haiku": "claude-haiku-4-5",
+    "sonnet": "claude-sonnet-5",
+    "opus": "claude-opus-4-8",
+}
+WEBAPP_CONTRACT_VERSION = "ai-request-v2"
+
+
+@dataclass(frozen=True)
+class AIRequest:
+    message: str
+    model: str
+
+
+def _parse_ai_request(data: str) -> AIRequest:
+    """Validiert den versionierten WebApp-KI-Vertrag ohne Prompt-Fallback."""
+    if not isinstance(data, str) or len(data.encode("utf-8")) > WEBAPP_DATA_MAX_BYTES:
+        raise ValueError("INVALID_AI_REQUEST")
+    try:
+        payload = json.loads(data)
+    except (json.JSONDecodeError, TypeError) as exc:
+        raise ValueError("INVALID_AI_REQUEST") from exc
+    if not isinstance(payload, dict) or set(payload) != {
+        "type", "version", "message", "model"
+    }:
+        raise ValueError("INVALID_AI_REQUEST")
+    if payload["type"] != "ai_request":
+        raise ValueError("INVALID_AI_REQUEST")
+    version = payload["version"]
+    if isinstance(version, bool) or not isinstance(version, int) or version not in {1, AI_REQUEST_VERSION}:
+        raise ValueError("INVALID_AI_REQUEST")
+    message = payload["message"]
+    model = payload["model"]
+    if not isinstance(message, str) or not message.strip():
+        raise ValueError("INVALID_AI_REQUEST")
+    if not isinstance(model, str):
+        raise ValueError("INVALID_AI_REQUEST")
+    # Rollout-Reihenfolge: zuerst diesen Bot deployen, danach das V2-Dashboard.
+    # Nur das bereits ausgelieferte strukturierte V1-Format bleibt kompatibel;
+    # unstrukturierter Freitext bekommt bewusst keinen Fallback.
+    if version == 1:
+        model = AI_V1_MODEL_ALIASES.get(model)
+        if model is None:
+            raise ValueError("INVALID_AI_REQUEST")
+    elif model not in AI_MODEL_SELECTIONS:
+        raise ValueError("INVALID_AI_REQUEST")
+    return AIRequest(message=message, model=model)
+
+
+def _parse_webapp_ai_request(data: str) -> tuple[AIRequest, str]:
+    """Akzeptiert temporaer V0-Freitext, aber nie JSON-artige Fehlformen.
+
+    Diese enge Bruecke ist nur fuer das nachweislich noch live ausgelieferte
+    V0-Dashboard bestimmt. Strukturierte Payloads bleiben fail-closed.
+    """
+    if not isinstance(data, str) or len(data.encode("utf-8")) > WEBAPP_DATA_MAX_BYTES:
+        raise ValueError("INVALID_AI_REQUEST")
+    stripped = data.strip()
+    if not stripped:
+        raise ValueError("INVALID_AI_REQUEST")
+    if stripped[0] in "{[":
+        return _parse_ai_request(data), "structured"
+    return AIRequest(message=data, model="auto"), "legacy_v0"
+
+
+def _versioned_webapp_url(url: str) -> str:
+    """Erzwingt pro WebApp-Vertrag eine neue Telegram-/Browser-Cache-URL."""
+    if not url:
+        return ""
+    parts = urlsplit(url)
+    query = [
+        (key, value) for key, value in parse_qsl(parts.query, keep_blank_values=True)
+        if key != "cloudbot_contract"
+    ]
+    query.append(("cloudbot_contract", WEBAPP_CONTRACT_VERSION))
+    return urlunsplit(parts._replace(query=urlencode(query)))
+
+
+def _configured_webapp_url(url: str) -> str:
+    """Stage 1: Live-V0-URL unveraendert lassen, bis V2 publiziert ist."""
+    return url
 
 
 def _broker_error_text(error: DockerBrokerError, container: str | None = None) -> str:
@@ -391,7 +490,7 @@ async def cmd_hilfe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     log_action(update.effective_chat.id, "hilfe", "", "angezeigt", True)
 
 
-WEBAPP_URL = os.environ.get("WEBAPP_URL", "")
+WEBAPP_URL = _configured_webapp_url(os.environ.get("WEBAPP_URL", ""))
 
 
 @authorized
@@ -425,11 +524,15 @@ async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
             return
 
         data = update.effective_message.web_app_data.data
-        logger.info("Webapp-Daten empfangen: %s", data[:100])
-        log_action(chat_id, "webapp", data[:100], "empfangen", True)
+        if not isinstance(data, str):
+            log_action(chat_id, "webapp", "type=invalid_payload", "abgelehnt", False)
+            await update.effective_message.reply_text("Ungültige Dashboard-Anfrage.")
+            return
 
         # Slash-Befehle direkt ausfuehren
         if data.startswith("/"):
+            logger.info("Webapp-Slash-Befehl empfangen: %s", data.split(None, 1)[0][:32])
+            log_action(chat_id, "webapp", "type=slash_command", "empfangen", True)
             parts = data.split(None, 2)
             cmd = parts[0].lstrip("/")
             args = parts[1:] if len(parts) > 1 else []
@@ -458,10 +561,23 @@ async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 await update.effective_message.reply_text(f"Unbekannter Befehl: /{cmd}")
             return
 
-        # Freitext -> KI
-        is_seo = _is_seo_request(data)
+        # Strukturierter WebApp-Auftrag -> KI
+        try:
+            ai_request, request_source = _parse_webapp_ai_request(data)
+        except ValueError:
+            logger.warning("Ungueltige Webapp-KI-Payload (%d Bytes)", len(data.encode("utf-8")))
+            log_action(chat_id, "webapp", "type=invalid_ai_request", "abgelehnt", False)
+            await update.effective_message.reply_text("Ungültige Dashboard-Anfrage.")
+            return
+        metadata = (
+            f"type={request_source} model={ai_request.model} "
+            f"message_chars={len(ai_request.message)}"
+        )
+        logger.info("Webapp-KI-Auftrag empfangen: %s", metadata)
+        log_action(chat_id, "webapp", metadata, "empfangen", True)
+        is_seo = _is_seo_request(ai_request.message)
         await update.effective_message.reply_text("Ok Chef, bin dran...")
-        response = await process_message(data, chat_id)
+        response = await process_message(ai_request.message, chat_id, ai_request.model)
         if response:
             full_response = response
             while response:
@@ -469,7 +585,7 @@ async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 response = response[4000:]
                 await update.effective_message.reply_text(chunk)
             if is_seo:
-                await _send_seo_pdf(update.effective_message, full_response, data)
+                await _send_seo_pdf(update.effective_message, full_response, ai_request.message)
     except Exception as e:
         logger.error("Webapp-Fehler: %s", e, exc_info=True)
         try:
@@ -497,7 +613,10 @@ async def _send_seo_pdf(message, response_text, user_text):
                 filename=os.path.basename(pdf_path),
                 caption="SEO-Analyse als PDF-Bericht"
             )
-        log_action(message.chat.id, "seo_pdf", user_text[:50], pdf_path, True)
+        log_action(
+            message.chat.id, "seo_pdf", f"message_chars={len(user_text)}",
+            "PDF erstellt", True,
+        )
     except Exception as e:
         logger.error("PDF-Fehler: %s", e, exc_info=True)
         await message.reply_text(f"PDF konnte nicht erstellt werden: {str(e)[:200]}")
@@ -546,7 +665,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     is_seo = _is_seo_request(user_text)
     try:
         await update.message.reply_text("Ok Chef, bin dran...")
-        response = await process_message(user_text, update.effective_chat.id)
+        response = await process_message(user_text, update.effective_chat.id, "auto")
         if response:
             full_response = response
             while response:
@@ -557,7 +676,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await _send_seo_pdf(update.message, full_response, user_text)
     except Exception as e:
         await update.message.reply_text(f"Fehler: {str(e)[:500]}")
-        log_action(update.effective_chat.id, "ai_chat", user_text[:100], str(e)[:200], False)
+        log_action(
+            update.effective_chat.id, "ai_chat",
+            f"requested_model=auto message_chars={len(user_text)}",
+            "TELEGRAM_HANDLER_FEHLER", False,
+        )
 
 
 # === Konnektivitaets-Waechter gegen Namespace-Verwaisung ===

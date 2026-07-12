@@ -3,7 +3,6 @@ KI-Agent fuer den Cloudbot.
 Nutzt Claude API um Auftraege eigenstaendig zu planen und auszufuehren.
 """
 
-import os
 import time
 import asyncio
 from claude_code_client import ClaudeCodeClient, ClaudeCodeError
@@ -11,7 +10,24 @@ from security import validate_exec_command, sanitize_output
 from docker_broker_client import DockerBrokerClient, DockerBrokerError
 from audit_log import log_action, log_blocked_command
 
-MODEL = os.environ.get("CLAUDE_CODE_MODEL", "sonnet")
+MODEL_SELECTIONS = frozenset({
+    "auto",
+    "claude-haiku-4-5",
+    "claude-sonnet-5",
+    "claude-sonnet-4-6",
+    "claude-sonnet-4-5",
+    "claude-opus-4-8",
+    "claude-opus-4-7",
+    "claude-opus-4-6",
+    "claude-opus-4-5",
+})
+AUTO_MODELS = {
+    "schnell": "claude-haiku-4-5",
+    "normal": "claude-sonnet-5",
+    "seo": "claude-sonnet-5",
+    "default": "claude-sonnet-5",
+    "intensiv": "claude-opus-4-8",
+}
 
 USER_ERROR_MESSAGES = {
     "MAX_AUTH_REQUIRED": "Claude Max ist nicht angemeldet oder der Account ist kein Max-Abo.",
@@ -44,25 +60,39 @@ SEO_KEYWORDS = ["seo", "seo-analyse", "seo analyse", "suchmaschine", "google ran
 NORMAL_KEYWORDS = ["osint", "recherche", "reconnaissance", "recon", "hintergrund"]
 
 
-def _detect_profile(message: str) -> tuple:
-    """Erkennt Scan-Profil aus der Nachricht."""
+def _detect_profile_name(message: str) -> str:
+    """Erkennt den stabilen Scan-Profilnamen aus der Nachricht."""
     msg_lower = message.lower()
     # SEO hat hoechste Prioritaet — immer volles Profil, keine Stufen
     for keyword in SEO_KEYWORDS:
         if keyword in msg_lower:
-            return SCAN_PROFILES["seo"]
+            return "seo"
     for keyword in INTENSIV_KEYWORDS:
         if keyword in msg_lower:
-            return SCAN_PROFILES["intensiv"]
+            return "intensiv"
     for keyword in SCHNELL_KEYWORDS:
         if keyword in msg_lower:
-            return SCAN_PROFILES["schnell"]
+            return "schnell"
     for keyword in NORMAL_KEYWORDS:
         if keyword in msg_lower:
-            return SCAN_PROFILES["normal"]
-    return SCAN_PROFILES["default"]
+            return "normal"
+    return "default"
 
-client_ai = ClaudeCodeClient(model=MODEL)
+
+def _detect_profile(message: str) -> tuple:
+    """Erkennt die zum Auftrag gehoerenden Ausfuehrungsgrenzen."""
+    return SCAN_PROFILES[_detect_profile_name(message)]
+
+
+def _resolve_model(message: str, selection: str) -> str:
+    """Validiert eine Auswahl und loest Auto ohne Prompt-Manipulation auf."""
+    if not isinstance(selection, str) or selection not in MODEL_SELECTIONS:
+        raise ValueError("Ungueltige Modellauswahl")
+    if selection != "auto":
+        return selection
+    return AUTO_MODELS[_detect_profile_name(message)]
+
+client_ai = ClaudeCodeClient()
 docker_broker = DockerBrokerClient()
 
 SYSTEM_PROMPT = """Du bist Cloudbot, ein professioneller Security-Analyst und Penetration Tester.
@@ -461,15 +491,25 @@ def _handle_tool_call(tool_name: str, tool_input: dict, chat_id: int,
     return "Unbekanntes Tool."
 
 
-async def process_message(user_message: str, chat_id: int) -> str:
+async def process_message(user_message: str, chat_id: int,
+                          model_selection: str = "auto") -> str:
     """Verarbeitet eine Freitext-Nachricht über Claude Code im Max-Plan."""
+    try:
+        resolved_model = _resolve_model(user_message, model_selection)
+    except ValueError:
+        log_action(chat_id, "ai_chat", "model=invalid", "KI_MODELL_UNGUELTIG", False)
+        return "Die gewählte KI-Modelloption ist ungültig."
+    audit_metadata = (
+        f"requested_model={model_selection} resolved_model={resolved_model} "
+        f"message_chars={len(user_message)}"
+    )
     try:
         authenticated = await asyncio.to_thread(client_ai.authentication_status)
     except ClaudeCodeError as exc:
-        log_action(chat_id, "ai_chat", user_message[:100], f"KI_AUTH_FEHLER:{exc.code}", False)
+        log_action(chat_id, "ai_chat", audit_metadata, f"KI_AUTH_FEHLER:{exc.code}", False)
         return _safe_ai_error(exc.code)
     if not authenticated:
-        log_action(chat_id, "ai_chat", user_message[:100], "KI_AUTH_FEHLER:MAX_AUTH_REQUIRED", False)
+        log_action(chat_id, "ai_chat", audit_metadata, "KI_AUTH_FEHLER:MAX_AUTH_REQUIRED", False)
         return (
             "Claude Max ist noch nicht angemeldet. Bitte einmal auf dem NAS "
             "`docker exec -it cloudbot-claude claude auth login` ausführen und dabei "
@@ -525,9 +565,10 @@ ANTWORTPROTOKOLL FÜR DEN CLOUDBOT:
                 SYSTEM_PROMPT + response_protocol,
                 prompt,
                 query_timeout,
+                resolved_model,
             )
         except ClaudeCodeError as exc:
-            log_action(chat_id, "ai_chat", user_message[:100], f"KI_FEHLER:{exc.code}", False)
+            log_action(chat_id, "ai_chat", audit_metadata, f"KI_FEHLER:{exc.code}", False)
             if response_parts:
                 return "\n".join(response_parts).strip() + "\n\n(Abbruch: KI-Dienstfehler)"
             return _safe_ai_error(exc.code)
@@ -576,23 +617,27 @@ ANTWORTPROTOKOLL FÜR DEN CLOUDBOT:
                     SYSTEM_PROMPT + response_protocol,
                     f"BISHERIGER VERLAUF:\n{transcript}",
                     min(remaining, 180),
+                    resolved_model,
                 )
                 if final_response.done and final_response.text.strip():
                     response_parts.append(final_response.text.strip())
                 else:
                     protocol_error = True
             except ClaudeCodeError as exc:
-                log_action(chat_id, "ai_chat", user_message[:100], f"KI_ENDBERICHT_FEHLER:{exc.code}", False)
+                log_action(chat_id, "ai_chat", audit_metadata, f"KI_ENDBERICHT_FEHLER:{exc.code}", False)
 
     elapsed = int(time.time() - start_time)
     full_response = "\n".join(response_parts).strip()
 
     if protocol_error:
         code = "KI_ENDBERICHT_UNVOLLSTAENDIG"
-        log_action(chat_id, "ai_chat", user_message[:100], code, False)
+        log_action(chat_id, "ai_chat", audit_metadata, code, False)
         return "Die KI hat keinen vollständigen Endbericht geliefert. Bitte versuche es erneut."
 
-    log_action(chat_id, "ai_chat", user_message[:100], f"[{len(full_response)} Zeichen, {elapsed}s] {full_response[:150]}", True)
+    log_action(
+        chat_id, "ai_chat", audit_metadata,
+        f"response_chars={len(full_response)} elapsed_seconds={elapsed}", True,
+    )
 
     if timed_out:
         timeout_msg = f"\n\n(Timeout nach {elapsed}s - Zwischenergebnis)"
@@ -605,10 +650,11 @@ ANTWORTPROTOKOLL FÜR DEN CLOUDBOT:
                     "Du bist ein Security-Analyst. Fasse die bisherigen Scan-Ergebnisse kurz und verständlich auf Deutsch zusammen.",
                     f"Fasse zusammen:\n\n{zusammenfassung[:4000]}",
                     120,
+                    resolved_model,
                 )
                 full_response = response.text.strip()
             except ClaudeCodeError as exc:
-                log_action(chat_id, "ai_chat", user_message[:100], f"KI_TIMEOUTBERICHT_FEHLER:{exc.code}", False)
+                log_action(chat_id, "ai_chat", audit_metadata, f"KI_TIMEOUTBERICHT_FEHLER:{exc.code}", False)
                 # Fallback: Rohe Tool-Ergebnisse zurueckgeben
                 full_response = "Bisherige Ergebnisse:\n\n" + "\n\n".join(tool_outputs[-3:])
         if full_response.strip():

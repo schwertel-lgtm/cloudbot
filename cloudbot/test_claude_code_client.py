@@ -7,7 +7,13 @@ import threading
 import unittest
 from unittest.mock import MagicMock, patch
 
+os.environ.setdefault("TELEGRAM_CHAT_ID", "7459992119")
+os.environ.setdefault("TELEGRAM_BOT_TOKEN", "1:" + "x" * 40)
+
+import ai_agent
+import bot
 import claude_sidecar
+import claude_code_client
 from claude_code_client import ClaudeCodeClient, ClaudeCodeError
 
 
@@ -15,10 +21,40 @@ VALID_PAYLOAD = {"text": "Fertig", "done": True, "tool_calls": []}
 
 
 class PayloadValidationTest(unittest.TestCase):
+    def test_cross_layer_model_allowlists_are_invariant(self):
+        canonical = set(claude_code_client.ALLOWED_MODELS)
+        self.assertEqual(canonical, set(claude_sidecar.ALLOWED_MODELS))
+        self.assertEqual(canonical | {"auto"}, set(ai_agent.MODEL_SELECTIONS))
+        self.assertEqual(canonical | {"auto"}, set(bot.AI_MODEL_SELECTIONS))
+        self.assertTrue(set(bot.AI_V1_MODEL_ALIASES.values()) <= canonical | {"auto"})
+
+    def test_client_and_sidecar_canonical_model_allowlists_match(self):
+        self.assertEqual(
+            set(claude_sidecar.ALLOWED_MODELS),
+            set(claude_code_client.ALLOWED_MODELS),
+        )
+
     def test_accepts_valid_payload(self):
         result = ClaudeCodeClient._parse_payload(VALID_PAYLOAD)
         self.assertEqual("Fertig", result.text)
         self.assertTrue(result.done)
+
+    def test_query_sends_per_request_model_without_mutable_client_state(self):
+        client = ClaudeCodeClient()
+        with patch.object(client, "_request", return_value=VALID_PAYLOAD) as request:
+            client.query("system", "prompt", 30, "claude-haiku-4-5")
+            client.query("system", "prompt", 30, "claude-opus-4-7")
+        self.assertEqual("claude-haiku-4-5", request.call_args_list[0].args[0]["model"])
+        self.assertEqual("claude-opus-4-7", request.call_args_list[1].args[0]["model"])
+        self.assertFalse(hasattr(client, "model"))
+
+    def test_query_rejects_auto_and_unknown_model_before_ipc(self):
+        client = ClaudeCodeClient()
+        with patch.object(client, "_request") as request:
+            for model in ("auto", "sonnet", "claude-sonnet-4-0", "opus --help", ["opus"]):
+                with self.subTest(model=model), self.assertRaises(ClaudeCodeError):
+                    client.query("system", "prompt", 30, model)
+        request.assert_not_called()
 
     def test_rejects_top_level_additional_field(self):
         with self.assertRaisesRegex(ClaudeCodeError, "INVALID_MODEL_PAYLOAD"):
@@ -59,6 +95,19 @@ class PayloadValidationTest(unittest.TestCase):
 
 
 class SidecarTest(unittest.TestCase):
+    def test_sidecar_model_allowlist_is_exact(self):
+        self.assertEqual({
+            "claude-haiku-4-5",
+            "claude-sonnet-5", "claude-sonnet-4-6", "claude-sonnet-4-5",
+            "claude-opus-4-8", "claude-opus-4-7", "claude-opus-4-6", "claude-opus-4-5",
+        }, set(claude_sidecar.ALLOWED_MODELS))
+        base = {
+            "action": "query", "system_prompt": "s", "prompt": "p", "timeout": 30,
+        }
+        for model in ("auto", "sonnet", "claude-opus-4-4", "Opus", ["opus"]):
+            with self.subTest(model=model), self.assertRaises(ClaudeCodeError):
+                claude_sidecar._validate_request({**base, "model": model})
+
     def test_child_environment_is_strict_allowlist(self):
         credentials = {
             "ANTHROPIC_API_KEY": "secret",
@@ -98,7 +147,7 @@ class SidecarTest(unittest.TestCase):
         with self.assertRaises(ClaudeCodeError):
             claude_sidecar._validate_request({
                 "action": "query", "system_prompt": "s", "prompt": "p",
-                "timeout": 1, "model": "sonnet",
+                "timeout": 1, "model": "claude-sonnet-5",
             })
 
     @patch("claude_code_client.socket.AF_UNIX", 1, create=True)
@@ -127,7 +176,7 @@ class SidecarTest(unittest.TestCase):
             "structured_output": VALID_PAYLOAD,
         }), "")
         claude_sidecar._query({
-            "model": "sonnet", "system_prompt": "s", "prompt": "p", "timeout": 30,
+            "model": "claude-sonnet-5", "system_prompt": "s", "prompt": "p", "timeout": 30,
         })
         command = run_mock.call_args.args[0]
         self.assertEqual("/usr/local/bin/claude", command[0])
@@ -135,6 +184,7 @@ class SidecarTest(unittest.TestCase):
         self.assertEqual("", command[command.index("--tools") + 1])
         self.assertIn("--no-session-persistence", command)
         self.assertIn("--json-schema", command)
+        self.assertEqual("claude-sonnet-5", command[command.index("--model") + 1])
 
     def test_query_capacity_exhaustion_is_stable_busy_error(self):
         with patch.object(claude_sidecar._QUERY_SLOTS, "acquire", return_value=False), \
@@ -156,7 +206,7 @@ class SidecarTest(unittest.TestCase):
         run_mock.return_value = subprocess.CompletedProcess([], 2, "", "sensitive-token")
         with self.assertRaisesRegex(ClaudeCodeError, "^CLAUDE_NONZERO_EXIT$") as raised:
             claude_sidecar._query({
-                "model": "sonnet", "system_prompt": "s", "prompt": "p", "timeout": 30,
+                "model": "claude-sonnet-5", "system_prompt": "s", "prompt": "p", "timeout": 30,
             })
         self.assertNotIn("sensitive", str(raised.exception))
 
@@ -166,7 +216,7 @@ class SidecarTest(unittest.TestCase):
         run_mock.return_value = subprocess.CompletedProcess([], 0, "not-json", "")
         with self.assertRaisesRegex(ClaudeCodeError, "CLAUDE_MALFORMED_OUTPUT"):
             claude_sidecar._query({
-                "model": "sonnet", "system_prompt": "s", "prompt": "p", "timeout": 30,
+                "model": "claude-sonnet-5", "system_prompt": "s", "prompt": "p", "timeout": 30,
             })
 
     @unittest.skipIf(claude_sidecar._Server is None, "Unix Domain Sockets sind hier nicht verfügbar")

@@ -14,7 +14,16 @@ from claude_code_client import ClaudeCodeClient, ClaudeCodeError, MAX_IPC_BYTES
 
 
 SOCKET_PATH = Path(os.environ.get("CLAUDE_IPC_SOCKET", "/run/claude-ipc/claude.sock"))
-ALLOWED_MODELS = {"sonnet", "opus", "haiku", "claude-sonnet-5"}
+ALLOWED_MODELS = frozenset({
+    "claude-haiku-4-5",
+    "claude-sonnet-5",
+    "claude-sonnet-4-6",
+    "claude-sonnet-4-5",
+    "claude-opus-4-8",
+    "claude-opus-4-7",
+    "claude-opus-4-6",
+    "claude-opus-4-5",
+})
 MAX_CLI_OUTPUT_BYTES = 1024 * 1024
 CLAUDE_CLI = "/usr/local/bin/claude"
 _QUERY_SLOTS = threading.BoundedSemaphore(2)
@@ -138,7 +147,7 @@ def _validate_request(request: Any) -> dict[str, Any]:
     timeout = request["timeout"]
     if isinstance(timeout, bool) or not isinstance(timeout, int) or not 30 <= timeout <= 600:
         raise ClaudeCodeError("INVALID_REQUEST")
-    if request["model"] not in ALLOWED_MODELS:
+    if not isinstance(request["model"], str) or request["model"] not in ALLOWED_MODELS:
         raise ClaudeCodeError("INVALID_REQUEST")
     return request
 
