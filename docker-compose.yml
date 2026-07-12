@@ -123,6 +123,7 @@ services:
     build:
       context: ./cloudbot
       dockerfile: Dockerfile.broker
+      network: host
     container_name: cloudbot-docker-broker
     restart: unless-stopped
     network_mode: none
