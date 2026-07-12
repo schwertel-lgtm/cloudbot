@@ -15,6 +15,9 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 # Audit Logger
 audit_logger = logging.getLogger("cloudbot.audit")
 audit_logger.setLevel(logging.INFO)
+# propagate=False: Audit-Eintraege gehoeren NUR in audit.log, nicht
+# zusaetzlich in den Container-stdout-Stream (waere Duplizierung).
+audit_logger.propagate = False
 
 handler = RotatingFileHandler(
     LOG_DIR / "audit.log",
@@ -28,6 +31,8 @@ audit_logger.addHandler(handler)
 # Security Logger (unautorisierte Zugriffe)
 security_logger = logging.getLogger("cloudbot.security")
 security_logger.setLevel(logging.WARNING)
+# propagate=False: Security-Events gehoeren NUR in security.log.
+security_logger.propagate = False
 
 sec_handler = RotatingFileHandler(
     LOG_DIR / "security.log",
