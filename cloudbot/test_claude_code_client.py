@@ -95,6 +95,29 @@ class PayloadValidationTest(unittest.TestCase):
 
 
 class SidecarTest(unittest.TestCase):
+    @staticmethod
+    def _handler_with_write_error(error):
+        handler = object.__new__(claude_sidecar._Handler)
+        handler.rfile = MagicMock()
+        handler.rfile.readline.return_value = b'{"action":"auth_status"}\n'
+        handler.wfile = MagicMock()
+        handler.wfile.write.side_effect = error
+        return handler
+
+    @patch("claude_sidecar._max_authenticated", return_value=True)
+    def test_expected_local_client_disconnect_does_not_escape_handler(self, _auth_mock):
+        for error in (BrokenPipeError("closed"), ConnectionResetError("reset")):
+            with self.subTest(error=type(error).__name__):
+                handler = self._handler_with_write_error(error)
+                handler.handle()
+                handler.wfile.write.assert_called_once()
+
+    @patch("claude_sidecar._max_authenticated", return_value=True)
+    def test_unexpected_response_write_error_is_not_swallowed(self, _auth_mock):
+        handler = self._handler_with_write_error(OSError("unexpected write failure"))
+        with self.assertRaisesRegex(OSError, "unexpected write failure"):
+            handler.handle()
+
     def test_sidecar_model_allowlist_is_exact(self):
         self.assertEqual({
             "claude-haiku-4-5",

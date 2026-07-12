@@ -206,7 +206,12 @@ class _Handler(socketserver.StreamRequestHandler):
             response = {"ok": False, "result": None, "error": exc.code}
         except (UnicodeDecodeError, json.JSONDecodeError, ValueError, TypeError):
             response = {"ok": False, "result": None, "error": "INVALID_REQUEST"}
-        self.wfile.write(json.dumps(response, separators=(",", ":")).encode("utf-8") + b"\n")
+        try:
+            self.wfile.write(json.dumps(response, separators=(",", ":")).encode("utf-8") + b"\n")
+        except (BrokenPipeError, ConnectionResetError):
+            # Lokale Healthchecks duerfen nach dem Request schliessen, ohne die
+            # spaetere Antwort noch zu lesen. Das ist kein Sidecar-Fehler.
+            return
 
 
 if hasattr(socketserver, "ThreadingUnixStreamServer"):
